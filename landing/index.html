@@ -119,10 +119,11 @@ if ((await a.presentAlert()) === 0) Safari.open(&quot;scriptable:///run?scriptNa
   el.parentNode.insertBefore(el, document.getElementById("ios"));
   document.getElementById("pick").textContent = "เจอเครื่องของคุณแล้ว 👇 (หรือเลือกแบบอื่นด้านล่าง)";
   function toast(m) { var t = document.getElementById("toast"); t.textContent = m; t.style.display = "block"; setTimeout(function () { t.style.display = "none"; }, 2500); }
-  // ยังไม่มี APK ที่ปล่อยจริง → บอกให้ใช้เว็บแอปไปก่อน แทนลิงก์เสีย
-  fetch("https://api.github.com/repos/perykung-alt/pixel-cat-portfolio/releases/latest").then(function (r) {
-    if (r.ok) return r.json().then(function (j) { var b = document.getElementById("apkBtn"); b.textContent = "⬇️ ดาวน์โหลดแอป " + (j.tag_name || "").replace("android-", ""); });
-    if (r.status === 404) { var b = document.getElementById("apkBtn"); b.removeAttribute("href"); b.style.opacity = ".55"; b.textContent = "⏳ แอปกำลังเตรียม — ใช้เว็บแอปไปก่อน"; }
+  // ยังไม่มี APK ที่ปล่อยจริง (version.json ยังไม่มีส่วน "android") → บอกให้ใช้เว็บแอปไปก่อน แทนลิงก์เสีย
+  fetch("https://perykung-alt.github.io/pixel-cat-portfolio/version.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
+    var b = document.getElementById("apkBtn");
+    if (j.android && j.android.versionName) { b.textContent = "⬇️ ดาวน์โหลดแอป v" + j.android.versionName; if (j.android.url) b.href = j.android.url; }
+    else { b.removeAttribute("href"); b.style.opacity = ".55"; b.textContent = "⏳ แอปกำลังเตรียม — ใช้เว็บแอปไปก่อน"; }
   }).catch(function () {});
   document.getElementById("copyInst").onclick = function () {
     var s = document.getElementById("inst").textContent;

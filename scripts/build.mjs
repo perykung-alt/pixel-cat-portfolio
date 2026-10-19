@@ -19,6 +19,7 @@ const copy = (from, to) => {
 };
 copy(path.join(root, "web"), out);
 fs.writeFileSync(path.join(out, "shared.js"), shared);
+fs.copyFileSync(path.join(root, "version.json"), path.join(out, "version.json")); // หน้าแรกใช้ดูว่ามี APK แล้วหรือยัง
 const stamp = version + "-" + Date.now().toString(36);
 for (const f of fs.readdirSync(out).filter((f) => /\.html$/.test(f) || f === "sw.js")) {
   const p = path.join(out, f);
