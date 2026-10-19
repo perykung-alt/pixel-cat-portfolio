@@ -1,5 +1,5 @@
 {
-  "version": "6.2.2",
+  "version": "6.3.0",
   "file": "PortfolioWidget.js",
-  "notes": "ราคาหุ้นไทย/หุ้นนอกสำรองจาก CNBC (ใช้ได้แม้ Yahoo ล่ม) · เว็บแอป Android ดึงราคาหุ้นสดได้ทุกตัว"
+  "notes": "เตรียมแอป Android พร้อม widget บนหน้าจอ"
 }

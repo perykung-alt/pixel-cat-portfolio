@@ -21,7 +21,19 @@ let data = loadData();
 let hist = LS.get("pcp:hist", []);
 let feed = LS.get("pcp:feed", null);
 let S = null;
-const save = () => { const d = Object.assign({}, data); delete d.fresh; LS.set("pcp:data", d); };
+const IN_APP = typeof window.AndroidBridge !== "undefined";
+const save = () => {
+  const d = Object.assign({}, data); delete d.fresh; LS.set("pcp:data", d);
+  if (IN_APP) try { AndroidBridge.save(JSON.stringify(d)); } catch (e) {}
+};
+// ส่งผลคำนวณให้ widget ของแอป Android
+function pushWidget() {
+  if (!IN_APP || !S) return;
+  const H = holdsMarkets(S, data.settings);
+  const cats = {};
+  for (const c of CAT_ORDER) cats[c] = { value: S.cats[c].value, cost: S.cats[c].cost, day: S.cats[c].day };
+  try { AndroidBridge.summary(JSON.stringify({ total: S.total, cost: S.cost, day: S.day, cats, at: feed && feed.at ? Math.max(feed.at, Date.now() - 60e3) : Date.now(), missing: S.errors, holdsThai: H.th, holdsUs: H.us })); } catch (e) {}
+}
 
 // ---------- ราคา ----------
 // ดึงราคาหุ้นสดจาก CNBC ตรงจากมือถือ (ได้ทุกตัว ไม่จำกัดแค่รายชื่อในระบบ)
@@ -550,7 +562,7 @@ function showTab(t) {
   scrollTo(0, 0);
 }
 function refresh() {
-  recompute(); planRoom();
+  recompute(); planRoom(); pushWidget();
   // แต่ละส่วนวาดแยกกัน ส่วนไหนพังจะไม่ลากส่วนอื่นพังตาม
   for (const fn of [renderHome, renderPort]) { try { fn(); } catch (e) { toast("⚠︎ " + fn.name + ": " + e.message, 5000); } }
   if (currentTab === "chart") renderChart();
@@ -562,7 +574,12 @@ async function tick() { await loadFeed(); refresh(); }
 addEventListener("error", (e) => toast("⚠︎ " + (e.message || "เกิดข้อผิดพลาด"), 5000));
 addEventListener("unhandledrejection", (e) => toast("⚠︎ " + ((e.reason && e.reason.message) || e.reason || "เกิดข้อผิดพลาด"), 5000));
 (async function init() {
-  $("ver").textContent = "v" + VERSION;
+  $("ver").textContent = "v" + VERSION + (IN_APP ? " · แอป " + (AndroidBridge.version ? AndroidBridge.version() : "") : "");
+  if (IN_APP) {
+    $("appCard").hidden = false;
+    $("widgetNow").onclick = () => { pushWidget(); try { AndroidBridge.refreshWidget(); } catch (e) {} toast("กำลังอัปเดต widget… 🐱"); };
+    save();
+  }
   applyTheme();
   document.querySelectorAll("nav.tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   $("addBtn").onclick = () => holdingForm(null, "เพิ่มรายการซื้อ");
@@ -581,7 +598,7 @@ addEventListener("unhandledrejection", (e) => toast("⚠︎ " + ((e.reason && e.
   document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
   addEventListener("resize", () => { if (currentTab === "chart") renderChart(); });
   let deferred = null;
-  addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferred = e; $("installBtn").hidden = false; });
+  addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); if (IN_APP) return; deferred = e; $("installBtn").hidden = false; });
   $("installBtn").onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice.catch(() => {}); deferred = null; $("installBtn").hidden = true; };
   if ("serviceWorker" in navigator) {
     try {
