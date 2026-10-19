@@ -87,19 +87,91 @@ try {
   if (isFinite(buy)) out.gold = { price: buy, prev: buy - chg, sell: num(h.Sell), time: h.TimeUpdate, at: Date.now() };
 } catch (e) { out.errors.push("gold " + e.message); }
 
-// USD/THB
-try { out.fx = { ...(await yahoo("THB=X")), at: Date.now() }; } catch (e) { out.errors.push("fx " + e.message); }
+// ---------- Yahoo แบบมี cookie + crumb และขอเป็นชุด (ขอทีละตัวจาก GitHub จะโดน 429) ----------
+let ysess = null;
+async function yahooSession() {
+  const r1 = await fetch("https://fc.yahoo.com/", { headers: { "User-Agent": UA }, redirect: "manual" });
+  const sc = typeof r1.headers.getSetCookie === "function" ? r1.headers.getSetCookie() : [r1.headers.get("set-cookie")];
+  const cookie = sc.filter(Boolean).map((c) => c.split(";")[0]).join("; ");
+  if (!cookie) throw new Error("no cookie (" + r1.status + ")");
+  for (const host of ["query2", "query1"]) {
+    const r2 = await fetch(`https://${host}.finance.yahoo.com/v1/test/getcrumb`, { headers: { "User-Agent": UA, Cookie: cookie } });
+    const crumb = (await r2.text()).trim();
+    if (r2.ok && crumb && !/[<{\s]/.test(crumb)) return { cookie, crumb };
+  }
+  throw new Error("no crumb");
+}
+async function yahooBatch(symbols) {
+  const res = {};
+  ysess ||= await yahooSession();
+  for (let i = 0; i < symbols.length; i += 100) {
+    const chunk = symbols.slice(i, i + 100);
+    const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(chunk.join(","))}&crumb=${encodeURIComponent(ysess.crumb)}`;
+    const j = await getJSON(url, { headers: { Cookie: ysess.cookie }, timeout: 20000 });
+    for (const q of (j.quoteResponse && j.quoteResponse.result) || []) {
+      const price = q.regularMarketPrice, prev = q.regularMarketPreviousClose ?? price;
+      if (isFinite(price)) res[q.symbol] = { price, prev, at: Date.now(), src: "yq" };
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return res;
+}
+// สำรอง 1: spark หลายตัวต่อครั้ง (ไม่ต้องใช้ crumb)
+async function yahooSpark(symbols) {
+  const res = {};
+  for (let i = 0; i < symbols.length; i += 20) {
+    const chunk = symbols.slice(i, i + 20);
+    try {
+      const j = await getJSON(`https://query1.finance.yahoo.com/v8/finance/spark?symbols=${encodeURIComponent(chunk.join(","))}&range=1d&interval=1d`, { headers: ysess ? { Cookie: ysess.cookie } : {} });
+      const list = j.spark && j.spark.result ? j.spark.result.map((r) => [r.symbol, r.response && r.response[0] && r.response[0].meta]) : Object.entries(j).map(([k, v]) => [k, v]);
+      for (const [sym, m] of list) {
+        if (!m) continue;
+        const price = m.regularMarketPrice ?? (Array.isArray(m.close) ? m.close.filter((x) => x != null).pop() : NaN);
+        const prev = m.chartPreviousClose ?? m.previousClose ?? price;
+        if (isFinite(price)) res[sym] = { price, prev, at: Date.now(), src: "ys" };
+      }
+    } catch (e) { if (/429/.test(e.message)) break; }
+    await new Promise((r) => setTimeout(r, 600));
+  }
+  return res;
+}
+// สำรอง 2 (เฉพาะหุ้นสหรัฐฯ): Stooq CSV ทีละหลายตัว
+async function stooq(symbols) {
+  const res = {};
+  for (let i = 0; i < symbols.length; i += 40) {
+    const chunk = symbols.slice(i, i + 40);
+    try {
+      const r = await fetch(`https://stooq.com/q/l/?s=${chunk.map((s) => s.toLowerCase().replace(/\./g, "-") + ".us").join("+")}&f=sohlc&h&e=csv`, { headers: { "User-Agent": UA } });
+      const lines = (await r.text()).trim().split(/\r?\n/).slice(1);
+      for (const ln of lines) {
+        const [sym, open, , , close] = ln.split(",");
+        const c = num(close), o = num(open);
+        if (isFinite(c) && c > 0) res[sym.replace(/\.US$/i, "").toUpperCase().replace(/-/g, ".")] = { price: c, prev: isFinite(o) ? o : c, at: Date.now(), src: "stooq" };
+      }
+    } catch (e) {}
+  }
+  return res;
+}
 
-// หุ้น — ดึงเฉพาะช่วงตลาดเปิด หรือเมื่อราคาเก่าเกิน 4 ชม. / ยังไม่มีราคา
-const jobs = [];
-for (const s of thai) { const k = s + ".BK"; const p = out.stocks[k]; if (setWindow || !p || Date.now() - (p.at || 0) > STALE_MS) jobs.push(k); }
-for (const s of us) { const p = out.stocks[s]; if (usWindow || !p || Date.now() - (p.at || 0) > STALE_MS) jobs.push(s); }
-let ok = 0, fail = 0;
-await pool(jobs, 6, async (k) => {
-  try { const r = await yahoo(k); out.stocks[k] = { price: r.price, prev: r.prev, at: Date.now() }; ok++; }
-  catch (e) { fail++; }
-});
-out.stats = { requested: jobs.length, ok, fail, setWindow, usWindow, thai: thai.size, us: us.size };
+const want = [...[...thai].map((s) => s + ".BK"), ...us, "THB=X"];
+const got = {};
+const srcErr = [];
+try { Object.assign(got, await yahooBatch(want)); } catch (e) { srcErr.push("yahoo-quote " + e.message); }
+let missing = want.filter((k) => !got[k]);
+if (missing.length) { try { Object.assign(got, await yahooSpark(missing)); } catch (e) { srcErr.push("yahoo-spark " + e.message); } }
+missing = [...us].filter((k) => !got[k]);
+if (missing.length) { try { Object.assign(got, await stooq(missing)); } catch (e) { srcErr.push("stooq " + e.message); } }
+for (const [k, v] of Object.entries(got)) if (k !== "THB=X") out.stocks[k] = v;
+
+// USD/THB (สำรอง: open.er-api.com)
+if (got["THB=X"]) out.fx = { price: got["THB=X"].price, prev: got["THB=X"].prev, at: Date.now() };
+else {
+  try { const j = await getJSON("https://open.er-api.com/v6/latest/USD"); const r = j.rates && j.rates.THB; if (r) out.fx = { price: r, prev: (prev.fx && prev.fx.price) || r, at: Date.now() }; }
+  catch (e) { out.errors.push("fx " + e.message); }
+}
+out.errors.push(...srcErr);
+const fresh = Object.values(out.stocks).filter((v) => Date.now() - (v.at || 0) < 3600e3).length;
+out.stats = { wanted: want.length, got: Object.keys(got).length, fresh, total: Object.keys(out.stocks).length, bySrc: Object.values(got).reduce((a, v) => ((a[v.src] = (a[v.src] || 0) + 1), a), {}), setWindow, usWindow };
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, JSON.stringify(out));
-console.log(JSON.stringify(out.stats), "errors:", out.errors.join("; ") || "none", "crypto:", Object.keys(out.crypto).length, "stocks:", Object.keys(out.stocks).length);
+console.log(JSON.stringify(out.stats), "errors:", out.errors.join("; ") || "none", "crypto:", Object.keys(out.crypto).length);

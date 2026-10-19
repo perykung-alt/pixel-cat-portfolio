@@ -25,12 +25,33 @@ const save = () => { const d = Object.assign({}, data); delete d.fresh; LS.set("
 
 // ---------- ราคา ----------
 async function loadFeed() {
+  // 1) ไฟล์ราคาจาก GitHub (หุ้นไทย/หุ้นนอก ฯลฯ)
   try {
     const r = await fetch("data/prices.json?t=" + Date.now(), { cache: "no-store" });
     if (!r.ok) throw new Error("HTTP " + r.status);
     feed = await r.json();
-    LS.set("pcp:feed", feed);
-  } catch (e) { if (!feed) toast("โหลดราคาไม่ได้ — ใช้ราคาที่กรอกเองไปก่อน"); }
+  } catch (e) { if (!feed) feed = { stocks: {}, crypto: {} }; }
+  feed.stocks ||= {}; feed.crypto ||= {};
+  // 2) ราคาสดที่มือถือดึงตรงได้: คริปโต (Bitkub), ทอง (ฮั่วเซ่งเฮง), USD/THB
+  const need = (t) => data.holdings.some((h) => h.type === t);
+  const jobs = [];
+  if (need("crypto")) jobs.push(fetch("https://api.bitkub.com/api/v3/market/ticker").then((r) => r.json()).then((arr) => {
+    for (const t of arr) {
+      const [base, q] = String(t.symbol).split("_"); if (q !== "THB") continue;
+      const last = num(t.last), pct = num(t.percent_change);
+      if (isFinite(last)) feed.crypto[base] = { price: last, prev: isFinite(pct) ? last / (1 + pct / 100) : last };
+    }
+    feed.cryptoAt = Date.now();
+  }).catch(() => {}));
+  if (need("gold")) jobs.push(fetch("https://apicheckprice.huasengheng.com/api/values/getprice/").then((r) => r.json()).then((arr) => {
+    const h = arr.find((x) => x.GoldType === "HSH") || arr[0]; const buy = num(h.Buy), chg = num(h.BuyChange) || 0;
+    if (isFinite(buy)) feed.gold = { price: buy, prev: buy - chg, sell: num(h.Sell), at: Date.now() };
+  }).catch(() => {}));
+  if (need("us") || !feed.fx) jobs.push(fetch("https://open.er-api.com/v6/latest/USD").then((r) => r.json()).then((j) => {
+    const v = j.rates && j.rates.THB; if (v) feed.fx = { price: v, prev: feed.fx && feed.fx.prev ? feed.fx.prev : v, at: Date.now() };
+  }).catch(() => {}));
+  await Promise.all(jobs);
+  LS.set("pcp:feed", feed);
 }
 function buildP() {
   const prices = {}, errors = [];
@@ -49,7 +70,10 @@ function buildP() {
     else errors.push(h.symbol);
   }
   const stale = !feed || Date.now() - (feed.at || 0) > 90 * 60e3;
-  return { prices, fx: f.fx || null, balances: null, errors: [...new Set(errors)], stale };
+  // ไม่มีเรทเงินเลย → ใช้เรทล่าสุดที่จำไว้ หรือค่าประมาณ (กันมูลค่าหุ้นนอกกลายเป็นค่าว่าง)
+  let fx = f.fx && isFinite(f.fx.price) ? f.fx : LS.get("pcp:lastfx", null);
+  if (fx && isFinite(fx.price)) LS.set("pcp:lastfx", fx); else fx = { price: 33.5, prev: 33.5, guess: true };
+  return { prices, fx, balances: null, errors: [...new Set(errors)], stale };
 }
 function recompute() {
   S = data.holdings.length ? compute(data, buildP()) : null;
@@ -141,6 +165,7 @@ function pixelDonut(cv) {
   const N = 26, px = 6, ctx = cv.getContext("2d");
   ctx.clearRect(0, 0, cv.width, cv.height);
   const C = CAT_ORDER.filter((c) => S.cats[c].value > 0);
+  if (!C.length) return;
   const tot = C.reduce((a, c) => a + S.cats[c].value, 0) || 1;
   let acc = 0; const b = C.map((c) => ({ end: (acc += S.cats[c].value / tot), color: CATS[c].color }));
   const R = N / 2 - .4, r = N / 2 - 8.2;
@@ -213,6 +238,20 @@ function renderPort() {
 }
 
 // ---------- กล่องโต้ตอบ ----------
+// กล่องโต้ตอบแบบรอคำตอบ (ใช้แทน prompt() ที่บางเครื่อง/แอปที่ติดตั้งแล้วไม่แสดง)
+function askDialog(html) {
+  return new Promise((resolve) => {
+    const dlg = $("dlg"), form = $("dlgForm");
+    form.innerHTML = html;
+    let result = null;
+    form.onsubmit = (e) => { const btn = e.submitter; result = { value: btn ? btn.value : "ok", fd: new FormData(form) }; };
+    // ตอบกลับหลังกล่องปิดสนิทแล้วเท่านั้น กันกล่องถัดไปถูกปิดตามโดยไม่ตั้งใจ
+    dlg.addEventListener("close", () => setTimeout(() => resolve(result || { value: "cancel", fd: new FormData(form) }), 0), { once: true });
+    if (dlg.open) dlg.close();
+    dlg.showModal();
+    const first = form.querySelector("input"); if (first) setTimeout(() => { first.focus(); first.select && first.select(); }, 50);
+  });
+}
 function openDialog(html, onSubmit) {
   const dlg = $("dlg"), form = $("dlgForm");
   form.innerHTML = html;
@@ -386,7 +425,7 @@ function bindSet() {
     save(); applyTheme(); refresh(); toast("บันทึกแล้ว 🐱");
   };
   $("copyPrompt").onclick = () => copyText(AI_PROMPT, "คัดลอก Prompt แล้ว ไปวางในแอป AI พร้อมแนบรูปได้เลย");
-  $("aiImport").onclick = aiImport;
+  $("aiImport").onclick = () => aiImport().catch((e) => toast("เกิดข้อผิดพลาด: " + e.message, 5000));
   const backup = () => JSON.stringify({ v: 2, data: Object.assign({}, data, { fresh: undefined }), hist });
   $("exportBtn").onclick = () => copyText(backup(), "คัดลอกข้อมูลสำรองแล้ว");
   $("dlBtn").onclick = () => {
@@ -426,59 +465,61 @@ function bindSet() {
     save(); refresh();
   };
 }
-function aiImport() {
+async function aiImport() {
   let items;
   try { items = parseAI($("aiText").value); } catch (e) { toast(e.message + " — คัดลอกคำตอบของ AI ทั้งก้อนมาวาง", 4000); return; }
-  const fx = feed && feed.fx ? feed.fx.price : NaN;
-  const f = feed || { stocks: {}, crypto: {} };
+  toast("กำลังดึงราคาล่าสุด…", 1500);
+  await loadFeed();
+  const f = feed, fx = f.fx ? f.fx.price : NaN;
+  const priceFor = (x) => {
+    if (x.type === "fund") return isFinite(x.nav) ? x.nav : data.navs[x.symbol] ? data.navs[x.symbol].nav : NaN;
+    const p = x.type === "us" ? f.stocks[x.symbol] : x.type === "thai" ? f.stocks[x.symbol + ".BK"] : x.type === "crypto" ? f.crypto[x.symbol] : x.type === "gold" ? f.gold : null;
+    const m = data.manual[key(x.type, x.symbol)];
+    return p && isFinite(p.price) ? p.price : m ? m.price : NaN;
+  };
   for (const x of items) {
     aiToUSD(x, fx);
     if (x.ok) continue;
-    // หน้ารวมของ Dime ไม่มีจำนวน/ต้นทุนเฉลี่ย → ใช้ราคาปัจจุบันคำนวณจากมูลค่า + กำไร
-    let p = null;
-    if (x.type === "us") p = f.stocks[x.symbol];
-    else if (x.type === "thai") p = f.stocks[x.symbol + ".BK"];
-    else if (x.type === "crypto") p = f.crypto[x.symbol];
-    else if (x.type === "gold") p = f.gold;
-    const m = data.manual[key(x.type, x.symbol)];
-    const price = x.type === "fund" ? (isFinite(x.nav) ? x.nav : data.navs[x.symbol] ? data.navs[x.symbol].nav : NaN) : p ? p.price : m ? m.price : NaN;
-    completeAI(x, price);
-    // หาราคาไม่เจอ (มักเพราะ AI อ่านชื่อผิด เช่น QQGI แทน QQQI) → ให้แก้ชื่อแล้วลองใหม่
-    if (!x.ok && x.needPrice && x.type !== "fund") {
-      const fixed = prompt(`หาราคา "${x.symbol}" ไม่เจอ — AI อาจอ่านชื่อผิด\n(มูลค่าในภาพ ${fmtPrice(x.value)} ${x.currency || ""})\nพิมพ์ชื่อหุ้นที่ถูกต้อง หรือกดยกเลิกเพื่อข้าม`, x.symbol);
-      if (fixed) {
-        x.symbol = fixed.toUpperCase().trim().replace(/\.BK$/, "");
-        const q = x.type === "us" ? f.stocks[x.symbol] : x.type === "thai" ? f.stocks[x.symbol + ".BK"] : x.type === "crypto" ? f.crypto[x.symbol] : null;
-        completeAI(x, q ? q.price : NaN);
-      }
+    completeAI(x, priceFor(x));
+    // ระบบยังไม่มีราคาตัวนี้ → ถามราคาปัจจุบัน (หรือแก้ชื่อถ้า AI อ่านผิด)
+    for (let tries = 0; !x.ok && x.needPrice && tries < 3; tries++) {
+      const cur = x.type === "us" ? "USD" : "บาท";
+      const r = await askDialog(`<h2>ต้องการราคา ${esc(x.symbol)}</h2>
+        <div class="sub">ภาพมีแค่มูลค่า ${fmtPrice(x.value)} ${esc(x.currency || cur)} ระบบต้องใช้ราคาปัจจุบันต่อ${TYPES[x.type] ? TYPES[x.type].unit : "หน่วย"}เพื่อคำนวณจำนวนและต้นทุนเฉลี่ย ดูราคาได้ในแอป Dime</div>
+        <label for="q_p">ราคาปัจจุบัน (${cur})</label><input id="q_p" name="p" inputmode="decimal" placeholder="เช่น 182.50">
+        <label for="q_s">ชื่อหุ้น (แก้ได้ถ้า AI อ่านผิด)</label><input id="q_s" name="s" value="${esc(x.symbol)}" autocapitalize="characters">
+        <div class="acts"><button class="btn" value="skip" formnovalidate>ข้ามตัวนี้</button><button class="btn pri" value="ok">คำนวณ</button></div>`);
+      if (r.value !== "ok") break;
+      const ns = String(r.fd.get("s") || "").toUpperCase().trim().replace(/\.BK$/, "");
+      if (ns) x.symbol = ns;
+      const p = num(r.fd.get("p"));
+      if (p > 0) { data.manual[key(x.type, x.symbol)] = { price: p, at: Date.now() }; completeAI(x, p); }
+      else completeAI(x, priceFor(x));
     }
-    if (!x.ok && x.needPrice) x.noPrice = true;
   }
-  const line = (x) => `<div class="li"><span>${x.ok ? "•" : "⚠︎"} <b>${esc(x.symbol || "?")}</b> <span class="sub">${x.type ? CATS[TYPES[x.type].cat].name : "?"}${x.moved ? " (แก้หมวดให้)" : ""}${x.region ? " · " + REGION[x.region] : ""}</span></span><span>${isFinite(x.qty) ? qtyStr(x.qty, x.type) : "?"} @ ${isFinite(x.avg) ? fmtPrice(x.avg) + (x.type === "us" ? " USD" : "") : "?"}${x.derived ? `<br><span class="sub">คำนวณจากมูลค่า</span>` : ""}${x.noPrice ? `<br><span class="sub down">ยังไม่มีราคาตัวนี้ในระบบ / ตรวจชื่อหุ้น</span>` : ""}</span></div>`;
-  const bad = items.filter((x) => !x.ok).length;
-  openDialog(`<h2>พบ ${items.length} รายการ</h2>${items.map(line).join("")}
+  const line = (x) => `<div class="li"><span>${x.ok ? "•" : "⚠︎"} <b>${esc(x.symbol || "?")}</b> <span class="sub">${x.type ? CATS[TYPES[x.type].cat].name : "?"}${x.moved ? " (แก้หมวดให้)" : ""}${x.region ? " · " + REGION[x.region] : ""}</span></span><span style="text-align:right">${isFinite(x.qty) ? qtyStr(x.qty, x.type) : "?"} @ ${isFinite(x.avg) ? fmtPrice(x.avg) + (x.type === "us" ? " USD" : "") : "?"}${x.derived ? `<br><span class="sub">คำนวณจากมูลค่า</span>` : ""}</span></div>`;
+  const good = items.filter((x) => x.ok), bad = items.length - good.length;
+  if (!good.length) { toast("ยังนำเข้าไม่ได้ — ไม่มีรายการที่ข้อมูลครบ", 4000); return; }
+  const r = await askDialog(`<h2>พบ ${items.length} รายการ</h2>${items.map(line).join("")}
     ${bad ? `<div class="hint">⚠︎ ${bad} รายการข้อมูลไม่ครบ จะข้ามไป (เพิ่มเองทีหลังได้)</div>` : ""}
     <label for="ai_mode">วิธีนำเข้า</label><select id="ai_mode" name="mode"><option value="replace">อัปเดตทับตัวเดิม (แนะนำ: รูปคือยอดถือปัจจุบัน)</option><option value="add">เพิ่มเป็นรายการซื้อใหม่ (เก็บของเดิม)</option></select>
-    <div class="acts"><button class="btn" value="cancel" formnovalidate>ยกเลิก</button><button class="btn pri" value="ok">นำเข้า</button></div>`,
-  (v, fd) => {
-    const replace = fd.get("mode") === "replace";
-    if (data.sample) { data.holdings = []; data.navs = {}; delete data.sample; }
-    let added = 0;
-    for (const x of items) {
-      if (!x.ok) continue;
-      const existing = data.holdings.filter((e) => e.type === x.type && e.symbol === x.symbol);
-      const h = { id: uid(), type: x.type, symbol: x.symbol, qty: x.qty, avg: x.avg, date: x.date || existing.map((e) => e.date).sort()[0] || ymd() };
-      if (x.fx) h.fx = x.fx;
-      if (replace) data.holdings = data.holdings.filter((e) => !(e.type === h.type && e.symbol === h.symbol));
-      data.holdings.push(h);
-      if (h.type === "fund" && x.region) { data.settings.fundInfo ||= {}; data.settings.fundInfo[h.symbol] = { region: x.region }; }
-      if (h.type === "fund" && isFinite(x.nav) && x.nav > 0) { const c = data.navs[h.symbol]; data.navs[h.symbol] = { nav: x.nav, date: ymd(), prev: c ? c.nav : x.nav }; }
-      added++;
-    }
-    save(); refresh(); $("aiText").value = "";
-    const needNav = [...new Set(data.holdings.filter((h) => h.type === "fund" && !data.navs[h.symbol]).map((h) => h.symbol))];
-    toast(`นำเข้า ${added} รายการแล้ว 🐱` + (needNav.length ? ` · กองทุนที่ยังไม่มี NAV: ${needNav.join(", ")}` : ""), 4500);
-  });
+    <div class="acts"><button class="btn" value="cancel" formnovalidate>ยกเลิก</button><button class="btn pri" value="ok">นำเข้า ${good.length} รายการ</button></div>`);
+  if (r.value !== "ok") { save(); return; }
+  const replace = r.fd.get("mode") === "replace";
+  if (data.sample) { data.holdings = []; data.navs = {}; delete data.sample; }
+  for (const x of good) {
+    const existing = data.holdings.filter((e) => e.type === x.type && e.symbol === x.symbol);
+    const h = { id: uid(), type: x.type, symbol: x.symbol, qty: x.qty, avg: x.avg, date: x.date || existing.map((e) => e.date).sort()[0] || ymd() };
+    if (x.fx) h.fx = x.fx;
+    if (replace) data.holdings = data.holdings.filter((e) => !(e.type === h.type && e.symbol === h.symbol));
+    data.holdings.push(h);
+    if (h.type === "fund" && x.region) { data.settings.fundInfo ||= {}; data.settings.fundInfo[h.symbol] = { region: x.region }; }
+    if (h.type === "fund" && isFinite(x.nav) && x.nav > 0) { const c = data.navs[h.symbol]; data.navs[h.symbol] = { nav: x.nav, date: ymd(), prev: c ? c.nav : x.nav }; }
+  }
+  save(); refresh(); $("aiText").value = "";
+  showTab("port");
+  const needNav = [...new Set(data.holdings.filter((h) => h.type === "fund" && !data.navs[h.symbol]).map((h) => h.symbol))];
+  toast(`นำเข้า ${good.length} รายการแล้ว 🐱` + (needNav.length ? ` · กองทุนที่ยังไม่มี NAV: ${needNav.join(", ")}` : ""), 4500);
 }
 
 // ---------- แท็บ / รอบอัปเดต ----------
@@ -492,12 +533,17 @@ function showTab(t) {
   scrollTo(0, 0);
 }
 function refresh() {
-  recompute(); planRoom(); renderHome(); renderPort();
+  recompute(); planRoom();
+  // แต่ละส่วนวาดแยกกัน ส่วนไหนพังจะไม่ลากส่วนอื่นพังตาม
+  for (const fn of [renderHome, renderPort]) { try { fn(); } catch (e) { toast("⚠︎ " + fn.name + ": " + e.message, 5000); } }
   if (currentTab === "chart") renderChart();
 }
 async function tick() { await loadFeed(); refresh(); }
 
 // ---------- เริ่มต้น ----------
+// แสดง error ให้เห็นบนจอ (แทนที่จะเงียบหายไป)
+addEventListener("error", (e) => toast("⚠︎ " + (e.message || "เกิดข้อผิดพลาด"), 5000));
+addEventListener("unhandledrejection", (e) => toast("⚠︎ " + ((e.reason && e.reason.message) || e.reason || "เกิดข้อผิดพลาด"), 5000));
 (async function init() {
   $("ver").textContent = "v" + VERSION;
   applyTheme();
