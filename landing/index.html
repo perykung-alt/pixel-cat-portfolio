@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Pixel Cat Portfolio</title>
+<meta name="description" content="พอร์ตหุ้นไทย หุ้นต่างประเทศ กองทุน คริปโต ทอง พร้อมแมวพิกเซล — widget สำหรับ iPhone และ Android">
+<meta property="og:title" content="Pixel Cat Portfolio 🐱">
+<meta property="og:description" content="widget พอร์ตลงทุนกับแมวพิกเซล สำหรับ iPhone และ Android">
+<meta property="og:image" content="https://perykung-alt.github.io/pixel-cat-portfolio/icons/icon-512.png">
+<link rel="icon" href="https://perykung-alt.github.io/pixel-cat-portfolio/icons/icon-192.png">
+<meta name="theme-color" content="#F4E9D2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1D1A2F" media="(prefers-color-scheme: dark)">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F4E9D2;--card:#FFF8E8;--ink:#3B2418;--text:#3B2418;--sub:#8A6E57;--accent:#FFD84A;--grid:rgba(59,36,24,.12);--hi:#FFE9A8}
+@media (prefers-color-scheme:dark){:root{--bg:#1D1A2F;--card:#2A2542;--ink:#0B0816;--text:#F3EAD7;--sub:#A79CC8;--grid:rgba(255,255,255,.08);--hi:#3B3466}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 'IBM Plex Sans Thai',-apple-system,'Segoe UI',sans-serif;
+  background-image:radial-gradient(var(--grid) 1px,transparent 1px);background-size:8px 8px}
+main{max-width:720px;margin:0 auto;padding:28px 16px 48px}
+.hero{display:flex;gap:16px;align-items:center;margin-bottom:22px}
+.hero img{width:84px;height:84px;image-rendering:pixelated;border:3px solid var(--ink);box-shadow:4px 4px 0 var(--ink);background:#F4E9D2;flex:none}
+h1{font:700 28px/1.15 'Pixelify Sans','IBM Plex Sans Thai',sans-serif;margin:0 0 4px}
+h2{font:700 19px 'Pixelify Sans','IBM Plex Sans Thai',sans-serif;margin:0 0 6px;display:flex;align-items:center;gap:8px}
+.lead{color:var(--sub);margin:0}
+.pick{font-weight:600;margin:6px 0 12px}
+.card{background:var(--card);border:3px solid var(--ink);box-shadow:4px 4px 0 var(--ink);padding:16px;margin-bottom:16px}
+.card.mine{background:var(--hi)}
+.badge{font:600 12px 'IBM Plex Sans Thai',sans-serif;border:2px solid var(--ink);padding:0 6px;background:var(--accent);color:#3B2418}
+ol{margin:8px 0 0;padding-left:22px}li{margin:4px 0}
+.btn{display:inline-flex;align-items:center;gap:6px;font:600 15px 'IBM Plex Sans Thai',sans-serif;color:#3B2418;background:var(--accent);border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);padding:9px 14px;text-decoration:none;cursor:pointer;min-height:46px;margin:10px 8px 0 0}
+.btn.alt{background:var(--card);color:var(--text)}
+.btn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--ink)}
+.sub{color:var(--sub);font-size:13.5px}
+pre{white-space:pre-wrap;word-break:break-all;background:#221E38;color:#FFE38A;border:3px solid #0B0816;padding:10px;font-size:11.5px;max-height:150px;overflow:auto;margin:10px 0 0}
+details summary{cursor:pointer;font-weight:600;margin-top:10px}
+.feat{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:14px;margin:0;padding:0;list-style:none}
+@media (max-width:480px){.feat{grid-template-columns:1fr}h1{font-size:24px}}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#221E38;color:#FFE38A;border:3px solid #0B0816;padding:10px 14px;font-weight:600;display:none}
+a{color:inherit}
+</style>
+</head>
+<body>
+<main>
+  <div class="hero">
+    <img src="https://perykung-alt.github.io/pixel-cat-portfolio/icons/icon-512.png" alt="แมวพิกเซล">
+    <div><h1>Pixel Cat Portfolio</h1><p class="lead">widget พอร์ตลงทุนกับแมวพิกเซลที่ใช้ชีวิตตามเวลาตลาดจริง</p></div>
+  </div>
+
+  <div class="card">
+    <ul class="feat">
+      <li>🇹🇭 หุ้นไทย · 🇺🇸 หุ้นต่างประเทศ</li><li>🏦 กองทุนรวม · ₿ คริปโต (Bitkub)</li>
+      <li>🥇 ทองคำแท่ง (ฮั่วเซ่งเฮง)</li><li>📸 นำเข้าพอร์ตจากรูปด้วย AI</li>
+      <li>🕘 เวลาตลาด SET / US ตามจริง</li><li>🔄 อัปเดตเวอร์ชันเองอัตโนมัติ</li>
+    </ul>
+  </div>
+
+  <p class="pick" id="pick">เลือกเครื่องที่ใช้:</p>
+
+  <section class="card" id="ios">
+    <h2>🍎 iPhone / iPad <span class="badge" hidden>เครื่องนี้</span></h2>
+    <div class="sub">widget บนหน้าจอหลักและหน้าจอล็อก ผ่านแอป Scriptable (ฟรี)</div>
+    <ol>
+      <li>ติดตั้งแอป <b>Scriptable</b> จาก App Store</li>
+      <li>กด <b>คัดลอกโค้ดติดตั้ง</b> ด้านล่าง</li>
+      <li>เปิด Scriptable → กด <b>+</b> → วางโค้ด → กด <b>▶︎</b> หนึ่งครั้ง</li>
+      <li>กดค้างที่หน้าจอหลัก → เพิ่ม widget <b>Scriptable</b> → แตะ widget → เลือก <b>Pixel Cat Portfolio</b></li>
+    </ol>
+    <a class="btn" href="https://apps.apple.com/app/scriptable/id1405459188" target="_blank" rel="noopener">⬇️ Scriptable (App Store)</a>
+    <button class="btn alt" id="copyInst">📋 คัดลอกโค้ดติดตั้ง</button>
+    <details><summary>ดูโค้ดติดตั้ง</summary><pre id="inst">// Pixel Cat Portfolio — ตัวติดตั้ง (รันครั้งเดียว แล้วลบทิ้งได้)
+const SRC = &quot;https://raw.githubusercontent.com/perykung-alt/pixel-cat-portfolio/main/PortfolioWidget.js&quot;;
+const NAME = &quot;Pixel Cat Portfolio&quot;;
+const r = new Request(SRC + &quot;?t=&quot; + Date.now());
+const code = await r.loadString();
+if (!code.includes(&quot;PIXEL CAT PORTFOLIO&quot;)) throw new Error(&quot;ดาวน์โหลดไม่สำเร็จ ลองใหม่อีกครั้ง&quot;);
+let fm; try { fm = FileManager.iCloud(); fm.documentsDirectory(); } catch (e) { fm = FileManager.local(); }
+fm.writeString(fm.joinPath(fm.documentsDirectory(), NAME + &quot;.js&quot;), code);
+const a = new Alert(); a.title = &quot;ติดตั้งสำเร็จ 🐱&quot;;
+a.message = &#x27;เพิ่มสคริปต์ &quot;&#x27; + NAME + &#x27;&quot; แล้ว (อัปเดตอัตโนมัติ)\nลบสคริปต์ติดตั้งนี้ทิ้งได้เลย&#x27;;
+a.addAction(&quot;เปิดเลย&quot;); a.addCancelAction(&quot;ปิด&quot;);
+if ((await a.presentAlert()) === 0) Safari.open(&quot;scriptable:///run?scriptName=&quot; + encodeURIComponent(NAME));</pre></details>
+  </section>
+
+  <section class="card" id="android">
+    <h2>🤖 Android <span class="badge" hidden>เครื่องนี้</span></h2>
+    <div class="sub">แอปพร้อม widget บนหน้าจอ ดึงราคาเองทุก ~15 นาที (ไฟล์ APK ไม่ผ่าน Play Store)</div>
+    <ol>
+      <li>กด <b>ดาวน์โหลดแอป</b> แล้วเปิดไฟล์ <code>pixel-cat.apk</code></li>
+      <li>ถ้าขึ้นเตือน ให้กด <b>การตั้งค่า</b> → อนุญาต <b>ติดตั้งแอปที่ไม่รู้จัก</b> จาก Chrome → กลับมากด <b>ติดตั้ง</b></li>
+      <li>กดค้างที่หน้าจอหลัก → <b>วิดเจ็ต</b> → <b>Pixel Cat พอร์ต</b> → ลากไปวาง</li>
+    </ol>
+    <a class="btn" href="https://github.com/perykung-alt/pixel-cat-portfolio/releases/latest/download/pixel-cat.apk">⬇️ ดาวน์โหลดแอป (APK)</a>
+    <a class="btn alt" href="https://perykung-alt.github.io/pixel-cat-portfolio/">🌐 ใช้แบบเว็บแอปแทน</a>
+    <div class="sub" style="margin-top:8px">เวอร์ชันใหม่: แอปจะเด้งบอกเอง กดดาวน์โหลดแล้วติดตั้งทับ ข้อมูลไม่หาย</div>
+  </section>
+
+  <section class="card" id="web">
+    <h2>💻 คอม / เครื่องอื่น <span class="badge" hidden>เครื่องนี้</span></h2>
+    <div class="sub">เปิดในเบราว์เซอร์ได้เลย ติดตั้งเป็นแอปได้ (Chrome / Edge → ไอคอนติดตั้งในช่อง URL)</div>
+    <a class="btn" href="https://perykung-alt.github.io/pixel-cat-portfolio/">🐱 เปิดเว็บแอป</a>
+  </section>
+
+  <div class="card sub">
+    🔒 ข้อมูลพอร์ตเก็บในเครื่องของคุณเท่านั้น ไม่ถูกส่งไปที่ไหน · ย้ายเครื่องได้ด้วยเมนู 💾 สำรอง
+    · โค้ดทั้งหมดเปิดเผยที่ <a href="https://github.com/perykung-alt/pixel-cat-portfolio" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+(function () {
+  var ua = navigator.userAgent || "";
+  var ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var mine = ios ? "ios" : /Android/.test(ua) ? "android" : "web";
+  var el = document.getElementById(mine);
+  el.classList.add("mine"); el.querySelector(".badge").hidden = false;
+  el.parentNode.insertBefore(el, document.getElementById("ios"));
+  document.getElementById("pick").textContent = "เจอเครื่องของคุณแล้ว 👇 (หรือเลือกแบบอื่นด้านล่าง)";
+  function toast(m) { var t = document.getElementById("toast"); t.textContent = m; t.style.display = "block"; setTimeout(function () { t.style.display = "none"; }, 2500); }
+  document.getElementById("copyInst").onclick = function () {
+    var s = document.getElementById("inst").textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(s) : Promise.reject()).then(function () { toast("คัดลอกแล้ว ไปวางใน Scriptable ได้เลย"); }, function () {
+      var r = document.createRange(); r.selectNodeContents(document.getElementById("inst")); var sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+      document.querySelector("details").open = true; toast("กดค้างเพื่อคัดลอกโค้ดที่เลือกไว้");
+    });
+  };
+})();
+</script>
+</body>
+</html>
