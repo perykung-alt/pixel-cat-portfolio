@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>เข้าสู่ระบบ · Pixel Cat</title>
+<style>
+body{margin:0;background:#F4E9D2;color:#3B2418;font:16px/1.5 -apple-system,'Segoe UI',sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px}
+.card{background:#FFF8E8;border:3px solid #3B2418;box-shadow:4px 4px 0 #3B2418;padding:20px;max-width:420px;width:100%;text-align:center}
+h1{font-size:20px;margin:0 0 8px}.sub{color:#8A6E57;font-size:14px}
+.btn{display:block;width:100%;font:600 16px sans-serif;background:#FFD84A;color:#3B2418;border:3px solid #3B2418;box-shadow:3px 3px 0 #3B2418;padding:12px;margin-top:14px;text-decoration:none;cursor:pointer}
+.err{color:#C9303C;margin-top:10px;font-size:14px}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🐱 เข้าสู่ระบบ Pixel Cat</h1>
+  <div class="sub" id="msg">เข้าสู่ระบบด้วย Google เพื่อเก็บพอร์ตไว้บนคลาวด์ แล้วกลับไปที่แอป</div>
+  <button class="btn" id="go">เข้าสู่ระบบด้วย Google</button>
+  <a class="btn" id="back" hidden>กลับไปที่แอป Pixel Cat</a>
+  <div class="err" id="err"></div>
+</div>
+<script src="firebase-config.js?v=__BUILD__"></script>
+<script src="cloud.js?v=__BUILD__"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+if (!window.PCP_FIREBASE) { $("err").textContent = "ยังไม่ได้ตั้งค่าระบบล็อกอิน"; $("go").hidden = true; }
+$("go").onclick = async () => {
+  $("err").textContent = "";
+  try {
+    const t = await Cloud.googleIdToken();
+    if (!t) throw new Error("ไม่ได้รับข้อมูลยืนยันจาก Google");
+    // intent:// ให้ Chrome เปิดแอปโดยตรง (ต้องกดปุ่มเอง Chrome ถึงยอมเปิดแอป)
+    const href = "intent://auth?idt=" + encodeURIComponent(t) + "#Intent;scheme=pixelcat;package=com.perykung.pixelcat;end";
+    $("back").href = href; $("back").hidden = false; $("go").hidden = true;
+    $("msg").textContent = "เข้าสู่ระบบแล้ว ✓ กดปุ่มด้านล่างเพื่อกลับไปที่แอป";
+  } catch (e) { $("err").textContent = "เข้าสู่ระบบไม่สำเร็จ: " + (e.code || e.message); }
+};
+</script>
+</body>
+</html>

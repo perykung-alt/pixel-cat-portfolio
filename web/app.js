@@ -22,9 +22,95 @@ let hist = LS.get("pcp:hist", []);
 let feed = LS.get("pcp:feed", null);
 let S = null;
 const IN_APP = typeof window.AndroidBridge !== "undefined";
-const save = () => {
+// opts.touch=false: บันทึกโดยไม่นับเป็นการแก้ไข (เช่น ตอนรับข้อมูลจากคลาวด์)
+const save = (opts = {}) => {
+  if (opts.touch !== false) data.updatedAt = Date.now();
   const d = Object.assign({}, data); delete d.fresh; LS.set("pcp:data", d);
   if (IN_APP) try { AndroidBridge.save(JSON.stringify(d)); } catch (e) {}
+  if (opts.touch !== false) schedulePush();
+};
+
+// ---------- ซิงก์คลาวด์ (Google) ----------
+const DEVICE = IN_APP ? "android-app" : /iPhone|iPad/.test(navigator.userAgent) ? "ios-web" : /Android/.test(navigator.userAgent) ? "android-web" : "computer";
+let pushTimer = null, syncing = false;
+function schedulePush() {
+  if (!window.Cloud || !Cloud.user) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(pushNow, 1500);
+}
+async function pushNow() {
+  if (!Cloud.user) return;
+  try { await Cloud.push(data, hist, DEVICE); LS.set("pcp:lastSync", Math.max(Date.now(), data.updatedAt || 0)); renderCloud(); }
+  catch (e) { renderCloud("ซิงก์ไม่สำเร็จ: " + (e.code || e.message)); }
+}
+function adopt(c) {
+  data = Object.assign({ holdings: [], navs: {}, manual: {} }, c.data);
+  data.settings = Object.assign({}, DEFAULT_SETTINGS, data.settings || {}); data.manual ||= {}; data.navs ||= {};
+  if (Array.isArray(c.hist) && c.hist.length >= hist.length) { hist = c.hist; LS.set("pcp:hist", hist); }
+  save({ touch: false }); applyTheme(); refresh();
+}
+// ดึงจากคลาวด์มาเทียบกับในเครื่อง แล้วเลือกข้อมูลที่ใหม่กว่า (ถามก่อนถ้าทั้งสองฝั่งมีการแก้ที่ยังไม่ได้ซิงก์)
+async function syncNow(manual = false) {
+  if (!window.Cloud || !Cloud.user || syncing) return;
+  syncing = true; renderCloud("กำลังซิงก์…");
+  try {
+    const c = await Cloud.pull();
+    const last = LS.get("pcp:lastSync", 0);
+    const localAt = data.updatedAt || 0;
+    const localHas = data.holdings.length > 0 && !data.sample;
+    const cloudHas = !!(c && c.data && Array.isArray(c.data.holdings) && c.data.holdings.length);
+    if (!c || !c.data) { if (localHas) await pushNow(); }
+    else if (!localHas && cloudHas) adopt(c);            // เครื่องนี้ยังว่าง → ใช้ของบนคลาวด์
+    else if (c.updatedAt > localAt) {
+      // ในเครื่องมีการแก้ที่ยังไม่ได้ซิงก์ไหม (ยังไม่เคยซิงก์ = ดูว่ารายการต่างกันไหม)
+      const differs = JSON.stringify(c.data.holdings) !== JSON.stringify(data.holdings);
+      const localDirty = localHas && differs && (last ? localAt > last : true);
+      if (localDirty) {
+        const r = await askDialog(`<h2>พบข้อมูล 2 ชุด</h2><div class="sub">ข้อมูลบนคลาวด์และในเครื่องนี้ไม่ตรงกัน จะใช้ชุดไหน?</div>
+          <div class="li"><span>☁️ บนคลาวด์ (${esc(c.device || "อุปกรณ์อื่น")})</span><span>${c.data.holdings.length} รายการ · ${new Date(c.updatedAt).toLocaleString("th-TH")}</span></div>
+          <div class="li"><span>📱 ในเครื่องนี้</span><span>${data.holdings.length} รายการ · ${localAt ? new Date(localAt).toLocaleString("th-TH") : "-"}</span></div>
+          <div class="acts"><button class="btn" value="local">ใช้ในเครื่องนี้</button><button class="btn pri" value="cloud">ใช้บนคลาวด์</button></div>`);
+        if (r.value === "cloud") adopt(c); else if (r.value === "local") await pushNow();
+      } else adopt(c);
+    } else if (localAt > c.updatedAt && localHas) await pushNow();
+    // กันนาฬิกาเครื่องอื่นเดินเร็ว: ถือว่าซิงก์ถึงเวลาของข้อมูลที่ใช้อยู่แล้ว
+    LS.set("pcp:lastSync", Math.max(Date.now(), data.updatedAt || 0));
+    renderCloud(manual ? "ซิงก์แล้ว ✓" : "");
+  } catch (e) { renderCloud("ซิงก์ไม่สำเร็จ: " + (e.code || e.message)); }
+  finally { syncing = false; }
+}
+function renderCloud(msg = "") {
+  const body = $("cloudBody"), btns = $("cloudBtns"), chip = $("cloudChip");
+  if (!body) return;
+  if (!window.Cloud || !Cloud.configured) {
+    body.innerHTML = "ยังไม่ได้เปิดระบบล็อกอิน — ตอนนี้ข้อมูลเก็บในเครื่องนี้เท่านั้น";
+    btns.innerHTML = ""; chip.textContent = ""; return;
+  }
+  if (!Cloud.ready) { body.textContent = "กำลังตรวจสอบ…"; return; }
+  const last = LS.get("pcp:lastSync", 0);
+  if (Cloud.user) {
+    chip.textContent = "☁️";
+    body.innerHTML = `เข้าสู่ระบบแล้ว: <b>${esc(Cloud.user.email || Cloud.user.name || "")}</b><br>ข้อมูลซิงก์อัตโนมัติทุกครั้งที่แก้ไข · ใช้บัญชีเดียวกันได้ทุกเครื่อง${last ? `<br>ซิงก์ล่าสุด ${new Date(last).toLocaleString("th-TH")}` : ""}${msg ? `<br><b>${esc(msg)}</b>` : ""}`;
+    btns.innerHTML = `<button class="btn sm" id="syncBtn">⟳ ซิงก์ตอนนี้</button><button class="btn sm danger" id="outBtn">ออกจากระบบ</button>`;
+    $("syncBtn").onclick = () => syncNow(true);
+    $("outBtn").onclick = async () => { if (confirm("ออกจากระบบ? ข้อมูลในเครื่องนี้ยังอยู่")) { await Cloud.signOut(); LS.set("pcp:lastSync", 0); } };
+  } else {
+    chip.textContent = "";
+    body.innerHTML = `เข้าสู่ระบบด้วย Google เพื่อเก็บพอร์ตไว้บนคลาวด์ ข้อมูลไม่หายแม้ล้างเครื่อง และใช้ร่วมกันได้ทุกเครื่อง (Android / คอม)${Cloud.error ? `<br><span class="down">${esc(Cloud.error)}</span>` : ""}${msg ? `<br><b>${esc(msg)}</b>` : ""}`;
+    btns.innerHTML = `<button class="btn pri sm" id="inBtn">เข้าสู่ระบบด้วย Google</button>`;
+    $("inBtn").onclick = loginGoogle;
+  }
+}
+async function loginGoogle() {
+  try {
+    // ในแอป Android: Google ไม่ให้ล็อกอินในเว็บวิว → เปิด Chrome ไปหน้า login แล้วส่ง token กลับเข้าแอป
+    if (IN_APP && AndroidBridge.openLogin) { AndroidBridge.openLogin(APP_URL + "login.html?from=app"); toast("เปิด Chrome เพื่อเข้าสู่ระบบ…"); return; }
+    await Cloud.signIn();
+  } catch (e) { toast("เข้าสู่ระบบไม่สำเร็จ: " + (e.code || e.message), 5000); }
+}
+window.__nativeLogin = async (idToken) => {
+  try { await Cloud.signInWithIdToken(idToken); toast("เข้าสู่ระบบแล้ว ☁️"); }
+  catch (e) { toast("เข้าสู่ระบบในแอปไม่สำเร็จ: " + (e.code || e.message), 5000); }
 };
 // ส่งผลคำนวณให้ widget ของแอป Android
 function pushWidget() {
@@ -578,20 +664,26 @@ addEventListener("unhandledrejection", (e) => toast("⚠︎ " + ((e.reason && e.
   if (IN_APP) {
     $("appCard").hidden = false;
     $("widgetNow").onclick = () => { pushWidget(); try { AndroidBridge.refreshWidget(); } catch (e) {} toast("กำลังอัปเดต widget… 🐱"); };
-    save();
+    save({ touch: false });
   }
   applyTheme();
   document.querySelectorAll("nav.tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   $("addBtn").onclick = () => holdingForm(null, "เพิ่มรายการซื้อ");
   bindSet();
   refresh(); startRoom();
+  if (window.Cloud) {
+    let prevUid = null;
+    Cloud.onChange(() => { const uid = Cloud.user && Cloud.user.uid; renderCloud(); if (uid && uid !== prevUid) syncNow(); prevUid = uid; });
+    Cloud.init();
+  }
+  renderCloud();
   await tick();
   if (data.fresh) {
     openDialog(`<h2>ยินดีต้อนรับ 🐱</h2><div class="sub">ตั้งชื่อแมวประจำพอร์ตของคุณ (เปลี่ยนทีหลังได้)</div>
       <label for="w_n">ชื่อแมว</label><input id="w_n" name="n" maxlength="12" value="ส้มจี๊ด">
-      <div class="hint">ข้อมูลทั้งหมดเก็บในเครื่องนี้ · ย้ายข้อมูลจาก iPhone ได้ที่แท็บ ⚙️ → สำรอง / ย้ายข้อมูล</div>
-      <div class="acts"><button class="btn pri" value="ok">เริ่มเลย</button></div>`,
-    (v, fd) => { data.settings.catName = (String(fd.get("n") || "").trim() || "ส้มจี๊ด").slice(0, 12); delete data.fresh; save(); refresh(); });
+      <div class="hint">${window.Cloud && Cloud.configured ? "เคยใช้แล้ว? กด \"เข้าสู่ระบบด้วย Google\" เพื่อดึงพอร์ตเดิมจากคลาวด์" : "ข้อมูลเก็บในเครื่องนี้ · ย้ายข้อมูลจาก iPhone ได้ที่แท็บ ⚙️ → สำรอง / ย้ายข้อมูล"}</div>
+      <div class="acts">${window.Cloud && Cloud.configured ? `<button class="btn" value="login">เข้าสู่ระบบด้วย Google</button>` : ""}<button class="btn pri" value="ok">เริ่มเลย</button></div>`,
+    (v, fd) => { data.settings.catName = (String(fd.get("n") || "").trim() || "ส้มจี๊ด").slice(0, 12); delete data.fresh; save(); refresh(); if (v === "login") setTimeout(loginGoogle, 50); });
   }
   setInterval(tick, 5 * 60e3);
   setInterval(() => { planRoom(); if (currentTab === "home") renderHome(); }, 60e3);

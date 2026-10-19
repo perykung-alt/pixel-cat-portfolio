@@ -1,5 +1,5 @@
 {
-  "version": "6.3.0",
+  "version": "6.4.0",
   "file": "PortfolioWidget.js",
-  "notes": "เตรียมแอป Android พร้อม widget บนหน้าจอ"
+  "notes": "เว็บแอป/Android: เข้าสู่ระบบด้วย Google เก็บพอร์ตบนคลาวด์ (เปิดใช้เมื่อตั้งค่า Firebase แล้ว)"
 }

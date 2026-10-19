@@ -20,7 +20,7 @@ const copy = (from, to) => {
 copy(path.join(root, "web"), out);
 fs.writeFileSync(path.join(out, "shared.js"), shared);
 const stamp = version + "-" + Date.now().toString(36);
-for (const f of ["index.html", "sw.js"]) {
+for (const f of fs.readdirSync(out).filter((f) => /\.html$/.test(f) || f === "sw.js")) {
   const p = path.join(out, f);
   fs.writeFileSync(p, fs.readFileSync(p, "utf8").replaceAll("__BUILD__", stamp));
 }

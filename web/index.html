@@ -79,7 +79,7 @@ a{color:inherit}
 </head>
 <body>
 <main>
-  <div class="top"><h1>🐱 Pixel Cat Portfolio</h1><span class="ver" id="ver"></span></div>
+  <div class="top"><h1>🐱 Pixel Cat Portfolio</h1><span class="ver"><span id="cloudChip"></span> <span id="ver"></span></span></div>
 
   <section id="tab-home">
     <div class="card">
@@ -108,6 +108,10 @@ a{color:inherit}
   </section>
 
   <section id="tab-set" hidden>
+    <div class="card" id="cloudCard"><h2>■ ☁️ บัญชี Google · เก็บข้อมูลบนคลาวด์</h2>
+      <div id="cloudBody" class="sub">กำลังตรวจสอบ…</div>
+      <div class="row" style="margin-top:10px" id="cloudBtns"></div>
+    </div>
     <div class="card"><h2>■ 📸 นำเข้าจากรูปด้วย AI</h2>
       <div class="sub">1) คัดลอก Prompt → 2) เปิด ChatGPT / Claude / Gemini วาง Prompt พร้อมแนบรูปแคปพอร์ตกี่รูปก็ได้ → 3) คัดลอกคำตอบมาวางด้านล่าง</div>
       <div class="row" style="margin-top:10px"><button class="btn sm" id="copyPrompt">คัดลอก Prompt</button></div>
@@ -148,6 +152,8 @@ a{color:inherit}
 <dialog id="dlg"><form method="dialog" id="dlgForm"></form></dialog>
 <div class="toast" id="toast" role="status"></div>
 
+<script src="firebase-config.js?v=__BUILD__"></script>
+<script src="cloud.js?v=__BUILD__"></script>
 <script src="shared.js?v=__BUILD__"></script>
 <script src="app.js?v=__BUILD__"></script>
 </body>

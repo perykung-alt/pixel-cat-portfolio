@@ -21,6 +21,8 @@ import org.json.JSONObject
  */
 class MainActivity : Activity() {
     private lateinit var web: WebView
+    private var pendingIdToken: String? = null
+    private var pageReady = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,9 +47,37 @@ class MainActivity : Activity() {
                 runCatching { startActivity(Intent(Intent.ACTION_VIEW, u)) }
                 return true
             }
+
+            override fun onPageFinished(view: WebView, url: String) {
+                pageReady = true
+                deliverLogin()
+            }
         }
+        handleIntent(intent)
         if (savedInstanceState != null) web.restoreState(savedInstanceState) else web.loadUrl(APP_URL)
         checkUpdate()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    /** กลับจากหน้า login ใน Chrome: pixelcat://auth?idt=<Google ID token> */
+    private fun handleIntent(i: Intent?) {
+        val d = i?.data ?: return
+        if (d.scheme == "pixelcat" && d.host == "auth") {
+            pendingIdToken = d.getQueryParameter("idt")
+            deliverLogin()
+        }
+    }
+
+    private fun deliverLogin() {
+        val t = pendingIdToken ?: return
+        if (!pageReady) return
+        pendingIdToken = null
+        web.evaluateJavascript("window.__nativeLogin && window.__nativeLogin(${JSONObject.quote(t)})", null)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -99,6 +129,11 @@ class MainActivity : Activity() {
         @JavascriptInterface fun refreshWidget() { RefreshWorker.runNow(act) }
 
         @JavascriptInterface fun version(): String = BuildConfig.VERSION_NAME
+
+        /** Google ไม่อนุญาตให้ล็อกอินในเว็บวิว → เปิดหน้า login ใน Chrome แล้วรับ token กลับทาง pixelcat://auth */
+        @JavascriptInterface fun openLogin(url: String) {
+            act.runOnUiThread { runCatching { act.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } }
+        }
     }
 
     companion object {
