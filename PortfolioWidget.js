@@ -1,0 +1,2088 @@
+// Variables used by Scriptable.
+// These must be at the very top of the file. Do not edit.
+// icon-color: orange; icon-glyph: cat;
+/*
+ * ==========================================================
+ *  PIXEL CAT PORTFOLIO  v6  — หุ้นไทย / หุ้นต่างประเทศ / กองทุนรวม / คริปโต / ทองคำ
+ *  สำหรับแอป Scriptable (iOS) · widget เล็ก / กลาง / ใหญ่ / ล็อกสกรีน
+ * ----------------------------------------------------------
+ *  อัปเดตอัตโนมัติ: สคริปต์เช็กเวอร์ชันใหม่จาก GitHub เอง (ทุก 6 ชม.) แล้วเขียนทับตัวเอง
+ *  ข้อมูลพอร์ต/ตั้งค่า/API key อยู่ในเครื่องของแต่ละคน ไม่ถูกแตะตอนอัปเดต
+ *  https://github.com/perykung-alt/pixel-cat-portfolio
+ *  (ข้อมูลเก็บแยกไว้ในโฟลเดอร์ iCloud Drive/Scriptable/PortfolioWidget)
+ *
+ *  แหล่งราคา
+ *   • หุ้น/ETF ต่างประเทศ + หุ้นไทย : Yahoo Finance (หุ้นไทยเติม .BK ให้อัตโนมัติ)
+ *   • อัตราแลกเปลี่ยน USD/THB      : Yahoo Finance (THB=X)
+ *   • คริปโต                         : Bitkub public API (ราคา THB)
+ *   • ทองคำแท่ง 96.5%                : ฮั่วเซ่งเฮง (ราคารับซื้อ ต่อ 1 บาททอง)
+ *   • กองทุนรวม                      : กรอก NAV เอง จากเมนู "อัปเดต NAV"
+ * ==========================================================
+ */
+
+// ---------- ค่าคงที่ ----------
+const REFRESH_MIN = 15;
+// หมวดตาม "สิ่งที่ถือจริง" (ประเภทสินทรัพย์ทางกฎหมาย) ไม่ใช่ตามที่กองทุนไปลงทุน
+//  • กองทุนรวมที่จดทะเบียนในไทย (เช่น KKP US500-UH-E, K-USA-A(A)) = "กองทุนรวม" เสมอ
+//    แม้จะลงทุนหุ้นต่างประเทศ → แสดงป้าย "ลงทุนต่างประเทศ" แยกให้แทน
+//  • "หุ้นต่างประเทศ" = หุ้น/ETF ที่ซื้อตรงในตลาดต่างประเทศ ราคาเป็น USD เท่านั้น
+const CATS = {
+  thai:   { name: "หุ้นไทย",        short: "หุ้นไทย", color: "#FF8A3D" },
+  us:     { name: "หุ้นต่างประเทศ", short: "หุ้นนอก", color: "#4AA3FF" },
+  fund:   { name: "กองทุนรวม",      short: "กองทุน",  color: "#2FC79A" },
+  crypto: { name: "คริปโต",         short: "คริปโต",  color: "#B26BFF" },
+  gold:   { name: "ทองคำ",          short: "ทอง",     color: "#FFC83D" },
+};
+const CAT_ORDER = ["thai", "us", "fund", "crypto", "gold"];
+const TYPES = {
+  thai:   { cat: "thai",   label: "หุ้นไทย (SET/mai)",                       unit: "หุ้น",    ph: "เช่น PTT, CPALL" },
+  us:     { cat: "us",     label: "หุ้น/ETF ต่างประเทศ ซื้อตรง (ราคา USD)",   unit: "หุ้น",    ph: "เช่น VOO, QQQ, NVDA" },
+  fund:   { cat: "fund",   label: "กองทุนรวมไทย (รวม Feeder ลงทุนต่างประเทศ)", unit: "หน่วย",   ph: "เช่น KKP US500-UH-E" },
+  crypto: { cat: "crypto", label: "คริปโต (ราคา Bitkub)",                    unit: "เหรียญ",  ph: "เช่น BTC, ETH" },
+  gold:   { cat: "gold",   label: "ทองคำแท่ง 96.5% (ฮั่วเซ่งเฮง)",           unit: "บาททอง",  ph: "HSH" },
+};
+const REGION = { foreign: "ลงทุนต่างประเทศ", thai: "ลงทุนในไทย", mixed: "ผสมไทย+ต่างประเทศ" };
+// ชื่อ บลจ. ไทยที่พบบ่อย ใช้ช่วยจับว่าเป็นกองทุนรวม ไม่ใช่หุ้นต่างประเทศ
+const TH_AMC = /^(KKP|K-|KF|KT|KTAM|SCB|TMB|TTB|ES-|ONE-|PRINCIPAL|LHFUND|LH|UOB|UOBS|KSAM|ASP|MEGA|TISCO|TCM|B-|BBL|BCAP|KASSET|KAPS|MFC|M-|DAOL|CIMB|AIA|ABERDEEN|ABAPAC|ABSM|PHATRA|KUB|KWI|XSPRING|INNOVEST|TALIS|EASTSPRING|BCARE|BTP|TP|SMART|THANACHART|T-|TGHPE|WE)/;
+// เดาเขตลงทุนจากชื่อกองทุน (ใช้แสดงป้ายพร้อม ? จนกว่าผู้ใช้จะยืนยัน)
+function guessRegion(sym) {
+  return /(US|USA|S&P|SP500|NASDAQ|NDQ|GLOBAL|GL|WORLD|CHINA|CN|JAPAN|JP|EU|EURO|INDIA|IN|VIET|VN|ASIA|TECH|AI|HEALTH|GOLD|OIL|REIT|EM)(\d|-|\b|\(|$)/.test(String(sym).toUpperCase());
+}
+function looksLikeThaiFund(sym) {
+  const s = String(sym || "").toUpperCase().trim();
+  if (/\s/.test(s)) return true;                                     // ชื่อมีเว้นวรรค เช่น "KKP US500-UH-E"
+  if (/\((A|D|R|E|SSF|RMF|SSFX|TESG|THAIESG)\)$/.test(s)) return true; // คลาสหน่วยลงทุน (A) (SSF) ฯลฯ
+  if (/-(UH|H|E|A|D|R|SSF|RMF|TESG|THAIESG|FX|AI|SSFX|RE|ACC|DIV)(-|$)/.test(s) && s.split("-").length >= 2 && s.length > 6) return true;
+  if (TH_AMC.test(s) && /-/.test(s)) return true;
+  return false;
+}
+const TYPE_ORDER = ["thai", "us", "fund", "crypto", "gold"];
+const CAT_COLORS = { scottish: "สกอตทิชโฟลด์ ทับบี้", british: "บริติช น้ำตาลเข้ม", orange: "ส้มลายเสือ", gray: "เทาสลิด", black: "ดำตาเหลือง", white: "ขาวตาฟ้า", calico: "สามสี" };
+const DEFAULT_SETTINGS = { catName: "ส้มจี๊ด", catColor: "orange", theme: "auto", goal: 0, fundInfo: {}, autoUpdate: true };
+
+// ---------- สไปรต์แมวพิกเซล ----------
+const SPR = {"base":["......................","..K..........K........",".KPK........KPK.......",".KPPK......KPPK.......","KOPPOKKKKKKOPPOK......","KOOOOODOODOOOOOK......","KOOOOOODDOOOOOOK......","KOOEEOOOOOOEEOOK......","KOOEWOOOOOOEWOOK......","KPOOOOLNNLOOOOPK......","KOOOOLKLLKLOOOOK......",".KOOOOLLLLOOOOK.......","..KKOOOOOOOOKK...KK...","..KOOOLLLLOOOK..KOOK..",".KOODLLLLLLDOOK..KOK..",".KOODLLLLLLDOOK.KOK...",".KOOOLLLLLLOOOKKOK....",".KLLKOOLLOOKLLKOOK....","ccKKKKKKKKKKKKKKKcc...","cCCCCCCCCCCCCCCCCCCc..",".cccccccccccccccccc..."],"eyes":{"normal":[["KOOEEOOOOOOEEOOK",7],["KOOEWOOOOOOWEOOK",8]],"happy":[["KOOKKOOOOOOKKOOK",7],["KOKOOKOOOOKOOKOK",8]],"sad":[["KOKOOOOOOOOOOKOK",6],["KOOKEOOOOOOEKOOK",7],["KOOEWOOOOOOWEOOK",8]],"sleep":[["KOOOOOOOOOOOOOOK",7],["KOKKKOOOOOOKKKOK",8]],"wow":[["KOOEEOODDOOEEOOK",6],["KOEEWOOOOOOEEWOK",7],["KOEEEOOOOOOEEEOK",8]]},"mouth":{"normal":["KOOOOLKLLKLOOOOK",10],"happy":["KOOOOLKLLKLOOOOK",10],"sad":["KOOOOLLKKLLOOOOK",10],"sleep":["KOOOOLLKKLLOOOOK",10],"wow":["KOOOOLLKKLLOOOOK",10]},"extra":{"sad":[[3,9,"B"],[3,10,"B"]],"wow":[[19,1,"Y"],[18,2,"Y"],[19,2,"W"],[20,2,"Y"],[17,3,"Y"],[18,3,"W"],[19,3,"W"],[20,3,"W"],[21,3,"Y"],[18,4,"Y"],[19,4,"W"],[20,4,"Y"],[19,5,"Y"]],"happy":[[17,3,"P"],[18,3,"P"],[20,3,"P"],[21,3,"P"],[17,4,"P"],[18,4,"P"],[19,4,"P"],[20,4,"P"],[21,4,"P"],[18,5,"P"],[19,5,"P"],[20,5,"P"],[19,6,"P"],[18,3,"W"]],"sleep":[[18,0,"Z"],[19,0,"Z"],[20,0,"Z"],[21,0,"Z"],[20,1,"Z"],[19,2,"Z"],[18,3,"Z"],[19,3,"Z"],[20,3,"Z"],[21,3,"Z"]]},"palettes":{"orange":{"K":"#3B2418","O":"#F59B42","D":"#C8681E","L":"#FFE3B8","P":"#FF8FA3","N":"#E85A7A","E":"#2A1A12","W":"#FFFFFF"},"gray":{"K":"#22252E","O":"#9AA3B2","D":"#6B7385","L":"#E9EDF3","P":"#FF9EB1","N":"#E2627F","E":"#14161C","W":"#FFFFFF"},"black":{"K":"#0E0E14","O":"#3A3A4A","D":"#2A2A36","L":"#5A5A70","P":"#FF8FA3","N":"#E85A7A","E":"#FFD84A","W":"#FFFFFF"},"white":{"K":"#4A3F3A","O":"#FFF8EE","D":"#F0DCC4","L":"#FFFFFF","P":"#FFA8B8","N":"#F07A93","E":"#3A6FD8","W":"#FFFFFF"},"calico":{"K":"#3A2418","O":"#FFF5E6","D":"#F28C38","L":"#FFFFFF","P":"#FF9EB1","N":"#E85A7A","E":"#2A1A12","W":"#FFFFFF"},"scottish":{"K":"#2E2620","O":"#9C8B74","D":"#55473A","L":"#FFFFFF","P":"#E9A0A8","N":"#C97B7B","E":"#1F2620","W":"#FFFFFF","G":"#93AE80"},"british":{"K":"#2A1A10","O":"#8A5A2E","D":"#5A3519","L":"#D9B88A","P":"#D9928A","N":"#B5655E","E":"#C7861A","W":"#FFF3D0"}},"fixed":{"C":"#E2464F","c":"#9E2A3A","B":"#5BC0FF","Y":"#FFD84A","Z":"#8FB8FF","G":"#93AE80"},"breeds":{"scottish":{"rows":{"1":"................","2":"................","3":".KKK........KKK.","4":"KODOKKKKKKKKODOK","5":"KOOOODODDODOOOOK","6":"KOOOOOODDOOOOOOK","14":".KODDLLLLLLDDOK.","15":".KOOOLLLLLLOOOK."},"eyes":{"normal":[["KOOGGOODDOOGGOOK",6],["KOGEWOOOOOOWEGOK",7],["KOGEEOOOOOOEEGOK",8]],"wow":[["KOGGGOODDOOGGGOK",6],["KOGEWOOOOOOWEGOK",7],["KOGEEOOOOOOEEGOK",8]]}},"british":{"rows":{"1":"................","2":"................","3":".KK..........KK.","4":"KPPKKKKKKKKKKPPK","5":"KOOOOOODDOOOOOOK","6":"KOOOOOOOOOOOOOOK"},"eyes":{"normal":[["KOOKKOOOOOOKKOOK",7],["KOOEEOOOOOOEEOOK",8]]}}}};
+
+// ---------- เวอร์ชัน & อัปเดตอัตโนมัติ ----------
+const VERSION = "6.0.0";
+const REPO = "perykung-alt/pixel-cat-portfolio";
+const UPDATE_BASE = `https://raw.githubusercontent.com/${REPO}/main/`;
+const REPO_URL = `https://github.com/${REPO}`;
+const UPDATE_EVERY_H = 6;
+function verCmp(a, b) {
+  const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number);
+  for (let i = 0; i < 3; i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0 ? 1 : -1; }
+  return 0;
+}
+function selfFM() {
+  const f = module.filename || "";
+  try { if (f.includes("Mobile Documents") || f.includes("iCloud")) return FileManager.iCloud(); } catch (e) {}
+  return FileManager.local();
+}
+async function fetchText(url, timeout = 12) {
+  const r = new Request(url + (url.includes("?") ? "&" : "?") + "t=" + Date.now());
+  r.timeoutInterval = timeout;
+  r.headers = { "Cache-Control": "no-cache" };
+  const txt = await r.loadString();
+  if (r.response && r.response.statusCode && r.response.statusCode !== 200) throw new Error("HTTP " + r.response.statusCode);
+  return txt;
+}
+// ตรวจโค้ดใหม่ก่อนเขียนทับ: ต้องเป็นสคริปต์ของเรา เวอร์ชันตรงกับ manifest และ syntax ถูกต้อง
+function validCode(code, ver) {
+  if (!code || code.length < 50000) return false;
+  if (!code.includes("PIXEL CAT PORTFOLIO") || !code.includes(`const VERSION = "${ver}"`)) return false;
+  try { const AF = Object.getPrototypeOf(async function () {}).constructor; new AF(code); } catch (e) { return false; }
+  return true;
+}
+async function checkUpdate({ force = false, apply = true } = {}) {
+  const F_UPD = fm.joinPath(DIR, "update.json");
+  const st = await readJSON(F_UPD, {});
+  if (!force && st.last && Date.now() - st.last < UPDATE_EVERY_H * 3600e3) return { skipped: true, st };
+  st.last = Date.now();
+  writeJSON(F_UPD, st);
+  const man = JSON.parse(await fetchText(UPDATE_BASE + "version.json", 8));
+  if (!man.version || verCmp(man.version, VERSION) <= 0) return { latest: true, man };
+  if (!apply) return { available: true, man };
+  const code = await fetchText(UPDATE_BASE + (man.file || "PortfolioWidget.js"), 20);
+  if (!validCode(code, man.version)) throw new Error("ไฟล์อัปเดตไม่ผ่านการตรวจ ข้ามรอบนี้");
+  const sfm = selfFM();
+  const path = module.filename;
+  try { sfm.writeString(fm.joinPath(DIR, "backup-v" + VERSION + ".js"), sfm.readString(path)); } catch (e) {}
+  sfm.writeString(path, code);
+  Object.assign(st, { updatedFrom: VERSION, updatedTo: man.version, notes: man.notes || "", updatedAt: Date.now(), seen: false });
+  writeJSON(F_UPD, st);
+  return { updated: true, man };
+}
+async function updateNotice() {
+  const F_UPD = fm.joinPath(DIR, "update.json");
+  const st = await readJSON(F_UPD, {});
+  if (st.updatedTo && st.updatedTo === VERSION && !st.seen) {
+    st.seen = true; writeJSON(F_UPD, st);
+    return `✨ อัปเดตเป็น v${VERSION} แล้ว\n${st.notes || ""}`.trim();
+  }
+  return "";
+}
+const INSTALLER = `// Pixel Cat Portfolio — ตัวติดตั้ง (รันครั้งเดียว แล้วลบทิ้งได้)
+const SRC = "${UPDATE_BASE}PortfolioWidget.js";
+const NAME = "Pixel Cat Portfolio";
+const r = new Request(SRC + "?t=" + Date.now());
+const code = await r.loadString();
+if (!code.includes("PIXEL CAT PORTFOLIO")) throw new Error("ดาวน์โหลดไม่สำเร็จ ลองใหม่อีกครั้ง");
+let fm; try { fm = FileManager.iCloud(); fm.documentsDirectory(); } catch (e) { fm = FileManager.local(); }
+fm.writeString(fm.joinPath(fm.documentsDirectory(), NAME + ".js"), code);
+const a = new Alert(); a.title = "ติดตั้งสำเร็จ 🐱";
+a.message = 'เพิ่มสคริปต์ "' + NAME + '" แล้ว (อัปเดตอัตโนมัติ)\\nลบสคริปต์ติดตั้งนี้ทิ้งได้เลย';
+a.addAction("เปิดเลย"); a.addCancelAction("ปิด");
+if ((await a.presentAlert()) === 0) Safari.open("scriptable:///run?scriptName=" + encodeURIComponent(NAME));`;
+async function updateFlow(data) {
+  const st = data.settings;
+  const i = await ask(`🔄 เวอร์ชัน v${VERSION}`, `อัปเดตอัตโนมัติ: ${st.autoUpdate !== false ? "เปิด" : "ปิด"} (เช็กทุก ${UPDATE_EVERY_H} ชม.)\n${REPO_URL}`,
+    ["เช็กอัปเดตตอนนี้", st.autoUpdate !== false ? "ปิดอัปเดตอัตโนมัติ" : "เปิดอัปเดตอัตโนมัติ", "เปิดหน้า GitHub"]);
+  if (i === 0) {
+    try {
+      const r = await checkUpdate({ force: true });
+      if (r.updated) {
+        const a = new Alert(); a.title = `อัปเดตเป็น v${r.man.version} แล้ว ✨`; a.message = (r.man.notes || "") + "\n\nปิดแล้วเปิดสคริปต์ใหม่เพื่อใช้เวอร์ชันล่าสุด (widget จะเปลี่ยนเองรอบถัดไป)";
+        a.addAction("ตกลง"); await a.presentAlert(); return "exit";
+      }
+      await info("เป็นเวอร์ชันล่าสุดแล้ว 🐱", `v${VERSION}`);
+    } catch (e) { await info("เช็กอัปเดตไม่สำเร็จ", String(e.message || e)); }
+  } else if (i === 1) { st.autoUpdate = st.autoUpdate === false; writeJSON(F_DATA, data); }
+  else if (i === 2) Safari.open(REPO_URL);
+}
+async function shareFlow() {
+  const i = await ask("📤 แชร์ให้เพื่อน", "เพื่อนต้องมีแอป Scriptable (ฟรี) แล้วสร้างสคริปต์ใหม่ → วางโค้ดติดตั้ง → กด ▶︎ ครั้งเดียว\nข้อมูลพอร์ตของคุณไม่ถูกแชร์ไปด้วย",
+    ["แชร์ข้อความ + โค้ดติดตั้ง", "คัดลอกเฉพาะโค้ดติดตั้ง"]);
+  if (i === 0) await ShareSheet.present([`🐱 Pixel Cat Portfolio — widget พอร์ตลงทุนกับแมวพิกเซล\n1) โหลดแอป Scriptable (ฟรี)\n2) เปิดแอป กด + สร้างสคริปต์ใหม่ แล้ววางโค้ดด้านล่าง\n3) กด ▶︎ ครั้งเดียว จะได้สคริปต์ "Pixel Cat Portfolio" ที่อัปเดตเองอัตโนมัติ\nรายละเอียด: ${REPO_URL}\n\n${INSTALLER}`]);
+  else if (i === 1) { Pasteboard.copy(INSTALLER); await info("คัดลอกโค้ดติดตั้งแล้ว"); }
+}
+
+// ---------- ไฟล์ (ใช้ตำแหน่งเดิมจากเวอร์ชันแรก ข้อมูลจึงไม่หาย) ----------
+let fm;
+try { fm = FileManager.iCloud(); fm.documentsDirectory(); } catch (e) { fm = FileManager.local(); }
+const DIR = fm.joinPath(fm.documentsDirectory(), "PortfolioWidget");
+if (!fm.fileExists(DIR)) fm.createDirectory(DIR, true);
+const F_DATA = fm.joinPath(DIR, "portfolio.json");
+const F_HIST = fm.joinPath(DIR, "history.json");
+const F_CACHE = fm.joinPath(DIR, "price-cache.json");
+
+async function readJSON(path, fallback) {
+  try {
+    if (!fm.fileExists(path)) return fallback;
+    if (fm.isFileStoredIniCloud && fm.isFileStoredIniCloud(path) && !fm.isFileDownloaded(path)) {
+      await fm.downloadFileFromiCloud(path);
+    }
+    return JSON.parse(fm.readString(path));
+  } catch (e) { return fallback; }
+}
+function writeJSON(path, obj) { fm.writeString(path, JSON.stringify(obj, null, 1)); }
+
+// ---------- ตัวช่วยตัวเลข / วันที่ ----------
+const num = (s) => { const n = parseFloat(String(s ?? "").replace(/,/g, "").trim()); return isFinite(n) ? n : NaN; };
+function fmt(n, d = 0) {
+  if (!isFinite(n)) return "-";
+  const s = Math.abs(n).toFixed(d);
+  const [i, f] = s.split(".");
+  return (n < 0 && Number(s) !== 0 ? "-" : "") + i.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (f ? "." + f : "");
+}
+const signed = (n, d = 0) => (n > 0 ? "+" : "") + fmt(n, d);
+const pctStr = (n) => (!isFinite(n) ? "-" : (n > 0 ? "+" : "") + n.toFixed(2) + "%");
+function compact(n) {
+  const a = Math.abs(n);
+  if (a >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (a >= 1e5) return (n / 1e3).toFixed(0) + "K";
+  return fmt(n);
+}
+function fmtPrice(p) {
+  if (!isFinite(p)) return "-";
+  const a = Math.abs(p);
+  return fmt(p, a >= 1000 ? 0 : a >= 1 ? 2 : a >= 0.01 ? 4 : 8);
+}
+const pad = (x) => String(x).padStart(2, "0");
+const ymd = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const hm = (d = new Date()) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const TH_MONTH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+const thDate = (d = new Date()) => `${d.getDate()} ${TH_MONTH[d.getMonth()]}`;
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const key = (type, sym) => `${type}:${sym}`;
+
+// ---------- SHA-256 / HMAC (สำหรับ Bitkub API แบบมี key) ----------
+function utf8(str) {
+  const out = [];
+  for (let i = 0; i < str.length; i++) {
+    let c = str.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff && i + 1 < str.length) {
+      c = 0x10000 + ((c - 0xd800) << 10) + (str.charCodeAt(++i) - 0xdc00);
+    }
+    if (c < 0x80) out.push(c);
+    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+    else if (c < 0x10000) out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+    else out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+  }
+  return out;
+}
+function sha256(bytes) {
+  const K = [0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+  const H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+  const m = bytes.slice();
+  const bitLen = bytes.length * 8;
+  m.push(0x80);
+  while (m.length % 64 !== 56) m.push(0);
+  const hi = Math.floor(bitLen / 0x100000000), lo = bitLen >>> 0;
+  m.push((hi >>> 24) & 255, (hi >>> 16) & 255, (hi >>> 8) & 255, hi & 255, (lo >>> 24) & 255, (lo >>> 16) & 255, (lo >>> 8) & 255, lo & 255);
+  const W = new Array(64);
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  for (let i = 0; i < m.length; i += 64) {
+    for (let t = 0; t < 16; t++) W[t] = (m[i + 4 * t] << 24) | (m[i + 4 * t + 1] << 16) | (m[i + 4 * t + 2] << 8) | m[i + 4 * t + 3];
+    for (let t = 16; t < 64; t++) {
+      const s0 = rotr(W[t - 15], 7) ^ rotr(W[t - 15], 18) ^ (W[t - 15] >>> 3);
+      const s1 = rotr(W[t - 2], 17) ^ rotr(W[t - 2], 19) ^ (W[t - 2] >>> 10);
+      W[t] = (W[t - 16] + s0 + W[t - 7] + s1) | 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let t = 0; t < 64; t++) {
+      const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + S1 + ch + K[t] + W[t]) | 0;
+      const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      const mj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + mj) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
+    H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+  }
+  const out = [];
+  for (const x of H) out.push((x >>> 24) & 255, (x >>> 16) & 255, (x >>> 8) & 255, x & 255);
+  return out;
+}
+function hmacSha256Hex(secret, msg) {
+  let k = utf8(secret);
+  if (k.length > 64) k = sha256(k);
+  while (k.length < 64) k.push(0);
+  const ipad = k.map((b) => b ^ 0x36), opad = k.map((b) => b ^ 0x5c);
+  const inner = sha256(ipad.concat(utf8(msg)));
+  return sha256(opad.concat(inner)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// ---------- ดึงราคา ----------
+async function getJSON(url, headers) {
+  const r = new Request(url);
+  r.timeoutInterval = 15;
+  r.headers = Object.assign({ "User-Agent": "Mozilla/5.0 (iPhone)", Accept: "application/json" }, headers || {});
+  return await r.loadJSON();
+}
+async function yahoo(sym) {
+  const j = await getJSON(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=1d`);
+  const m = j.chart.result[0].meta;
+  const price = m.regularMarketPrice;
+  const prev = m.chartPreviousClose ?? m.previousClose ?? price;
+  if (!isFinite(price)) throw new Error("no price " + sym);
+  return { price, prev };
+}
+async function bitkubTicker() {
+  const arr = await getJSON("https://api.bitkub.com/api/v3/market/ticker");
+  const map = {};
+  for (const t of arr) {
+    const [base, quote] = String(t.symbol).split("_");
+    if (quote !== "THB") continue;
+    const last = num(t.last), pct = num(t.percent_change);
+    map[base] = { price: last, prev: isFinite(pct) ? last / (1 + pct / 100) : last };
+  }
+  return map;
+}
+async function hshGold() {
+  const arr = await getJSON("https://apicheckprice.huasengheng.com/api/values/getprice/");
+  const h = arr.find((x) => x.GoldType === "HSH") || arr[0];
+  const buy = num(h.Buy), sell = num(h.Sell), chg = num(h.BuyChange) || 0;
+  return { price: buy, prev: buy - chg, sell, time: h.TimeUpdate };
+}
+async function bitkubBalances() {
+  if (!Keychain.contains("pw_bk_key") || !Keychain.contains("pw_bk_secret")) return null;
+  const apiKey = Keychain.get("pw_bk_key"), secret = Keychain.get("pw_bk_secret");
+  let ts = String(Date.now());
+  try {
+    const r = new Request("https://api.bitkub.com/api/v3/servertime");
+    const s = (await r.loadString()).trim();
+    if (/^\d+$/.test(s)) ts = s;
+  } catch (e) {}
+  const path = "/api/v3/market/balances", body = "{}";
+  const r = new Request("https://api.bitkub.com" + path);
+  r.method = "POST";
+  r.body = body;
+  r.timeoutInterval = 15;
+  r.headers = {
+    Accept: "application/json", "Content-Type": "application/json",
+    "X-BTK-APIKEY": apiKey, "X-BTK-TIMESTAMP": ts,
+    "X-BTK-SIGN": hmacSha256Hex(secret, ts + "POST" + path + body),
+  };
+  const j = await r.loadJSON();
+  if (j.error !== 0) throw new Error("Bitkub error " + j.error);
+  const out = {};
+  for (const [sym, v] of Object.entries(j.result || {})) {
+    const q = (num(v.available) || 0) + (num(v.reserved) || 0);
+    if (sym !== "THB" && q > 0) out[sym] = q;
+  }
+  return out;
+}
+
+async function fetchPrices(data) {
+  const cache = await readJSON(F_CACHE, { prices: {}, fx: null, ts: 0 });
+  const prices = {};
+  const errors = [];
+  const hs = data.holdings;
+  const need = (t) => hs.some((h) => h.type === t);
+
+  const jobs = [];
+  let fx = null;
+  if (need("us")) jobs.push(yahoo("THB=X").then((r) => (fx = r)).catch(() => errors.push("USD/THB")));
+  const yahooSyms = [...new Set(hs.filter((h) => h.type === "us" || h.type === "thai").map((h) => key(h.type, h.symbol)))];
+  for (const k of yahooSyms) {
+    const [type, sym] = k.split(":");
+    const ysym = type === "thai" ? (sym.endsWith(".BK") ? sym : sym + ".BK") : sym;
+    jobs.push(yahoo(ysym).then((r) => (prices[k] = r)).catch(() => errors.push(sym)));
+  }
+  let bk = null, bal = null;
+  if (need("crypto") || Keychain.contains("pw_bk_key")) {
+    jobs.push(bitkubTicker().then((m) => (bk = m)).catch(() => errors.push("Bitkub")));
+    jobs.push(bitkubBalances().then((b) => (bal = b)).catch(() => errors.push("Bitkub key")));
+  }
+  if (need("gold")) jobs.push(hshGold().then((g) => (prices["gold:HSH"] = g)).catch(() => errors.push("ทอง")));
+  await Promise.all(jobs);
+
+  if (bk) for (const [sym, p] of Object.entries(bk)) prices["crypto:" + sym] = p;
+  let stale = false;
+  for (const h of hs) {
+    const k = key(h.type, h.symbol);
+    if (h.type === "fund") continue;
+    if (!prices[k] && cache.prices[k]) { prices[k] = cache.prices[k]; stale = true; }
+  }
+  if (!fx && cache.fx) { fx = cache.fx; stale = true; }
+  // เก็บเฉพาะราคาที่พอร์ตใช้ ไม่ให้ไฟล์ cache ใหญ่เกินไป
+  const keep = {};
+  for (const h of hs) { const k = key(h.type, h.symbol); if (prices[k]) keep[k] = prices[k]; }
+  if (bal) for (const s of Object.keys(bal)) if (prices["crypto:" + s]) keep["crypto:" + s] = prices["crypto:" + s];
+  writeJSON(F_CACHE, { prices: Object.assign({}, cache.prices, keep), fx, ts: Date.now() });
+  return { prices, fx, balances: bal, errors, stale };
+}
+
+// ---------- คำนวณพอร์ต ----------
+function compute(data, P) {
+  const usdthb = P.fx ? P.fx.price : NaN;
+  const usdPrev = P.fx ? P.fx.prev : NaN;
+  const groups = {};
+  for (const h of data.holdings) {
+    const k = key(h.type, h.symbol);
+    const g = (groups[k] ||= { key: k, type: h.type, symbol: h.symbol, cat: TYPES[h.type].cat, qty: 0, cost: 0, lots: [] });
+    const lotFx = h.type === "us" ? (num(h.fx) || usdthb) : 1;
+    g.qty += h.qty;
+    g.cost += h.qty * h.avg * lotFx;
+    g.lots.push(h);
+  }
+  if (P.balances) {
+    for (const [sym, q] of Object.entries(P.balances)) {
+      const k = "crypto:" + sym;
+      if (groups[k]) { groups[k].qtyManual = groups[k].qty; groups[k].qty = q; groups[k].fromBitkub = true; }
+      else if (P.prices[k] && q * P.prices[k].price >= 50) {
+        groups[k] = { key: k, type: "crypto", symbol: sym, cat: "crypto", qty: q, cost: NaN, lots: [], fromBitkub: true };
+      }
+    }
+  }
+  const rows = [];
+  for (const g of Object.values(groups)) {
+    let price = NaN, prev = NaN, native = NaN;
+    if (g.type === "fund") {
+      const n = data.navs[g.symbol];
+      price = prev = n ? n.nav : NaN;
+      if (n && isFinite(n.prev)) prev = n.prev;
+    } else {
+      const p = P.prices[g.key];
+      if (p) {
+        native = p.price;
+        if (g.type === "us") { price = p.price * usdthb; prev = p.prev * usdPrev; }
+        else { price = p.price; prev = p.prev; }
+      }
+    }
+    const avgQty = g.qtyManual ?? g.qty;
+    if (g.fromBitkub && isFinite(g.cost) && avgQty > 0) g.cost = (g.cost / avgQty) * g.qty;
+    let value = g.qty * price;
+    if (!isFinite(value)) value = isFinite(g.cost) ? g.cost : 0;
+    const noCost = !isFinite(g.cost);
+    const cost = noCost ? value : g.cost;
+    const prevValue = isFinite(prev) ? g.qty * prev : value;
+    const day = value - prevValue;
+    rows.push({
+      ...g, price, native, value, cost, noCost, prevValue,
+      avg: g.qty > 0 ? cost / g.qty : NaN,
+      pl: value - cost, plPct: cost > 0 ? ((value - cost) / cost) * 100 : 0,
+      day, dayPct: prevValue > 0 ? (day / prevValue) * 100 : 0,
+      missingPrice: !isFinite(price),
+      firstDate: g.lots.map((l) => l.date).sort()[0] || "",
+    });
+  }
+  rows.sort((a, b) => b.value - a.value);
+  const cats = {};
+  for (const c of CAT_ORDER) cats[c] = { value: 0, cost: 0, day: 0 };
+  for (const r of rows) { cats[r.cat].value += r.value; cats[r.cat].cost += r.cost; cats[r.cat].day += r.day; }
+  const total = rows.reduce((s, r) => s + r.value, 0);
+  const cost = rows.reduce((s, r) => s + r.cost, 0);
+  const day = rows.reduce((s, r) => s + r.day, 0);
+  for (const c of CAT_ORDER) {
+    const x = cats[c];
+    x.pl = x.value - x.cost; x.plPct = x.cost > 0 ? (x.pl / x.cost) * 100 : 0;
+    x.share = total > 0 ? (x.value / total) * 100 : 0;
+  }
+  const movers = rows.filter((r) => !r.missingPrice && Math.abs(r.dayPct) > 0.005).sort((a, b) => b.dayPct - a.dayPct);
+  return {
+    rows, cats, total, cost, day, pl: total - cost,
+    plPct: cost > 0 ? ((total - cost) / cost) * 100 : 0,
+    dayPct: total - day > 0 ? (day / (total - day)) * 100 : 0,
+    best: movers[0] && movers[0].dayPct > 0 ? movers[0] : null,
+    worst: movers.length && movers[movers.length - 1].dayPct < 0 ? movers[movers.length - 1] : null,
+    usdthb, stale: P.stale, errors: P.errors, at: new Date(),
+  };
+}
+
+async function saveHistory(S) {
+  if (!(S.total > 0)) return [];
+  const hist = await readJSON(F_HIST, []);
+  const d = ymd();
+  const snap = { d, v: Math.round(S.total), c: Math.round(S.cost), cats: {} };
+  for (const c of CAT_ORDER) snap.cats[c] = Math.round(S.cats[c].value);
+  const i = hist.findIndex((x) => x.d === d);
+  if (i >= 0) hist[i] = snap; else hist.push(snap);
+  hist.sort((a, b) => (a.d < b.d ? -1 : 1));
+  const trimmed = hist.slice(-730);
+  writeJSON(F_HIST, trimmed);
+  return trimmed;
+}
+
+// ---------- เวลาตลาด (อิงเวลาจริง ไม่ขึ้นกับ timezone ของเครื่อง) ----------
+// SET (เวลาไทย): Pre-open 09:30 · เช้า 10:00–12:30 · พัก 12:30–13:30 · Pre-open 13:30 · บ่าย 14:00–16:30 · Pre-close 16:30–16:40
+// NYSE/Nasdaq (เวลานิวยอร์ก): Pre-market 04:00 · ตลาด 09:30–16:00 · After-hours 16:00–20:00 (แปลงเป็นเวลาไทยอัตโนมัติ รวม Daylight Saving)
+const SET_HOLIDAYS = new Set(["2026-01-01","2026-01-02","2026-03-03","2026-04-06","2026-04-13","2026-04-14","2026-04-15","2026-05-01","2026-05-04","2026-06-01","2026-06-03","2026-07-28","2026-07-29","2026-08-12","2026-10-13","2026-10-16","2026-10-23","2026-12-07","2026-12-10","2026-12-31"]);
+const US_HOLIDAYS = new Set(["2026-01-01","2026-01-19","2026-02-16","2026-04-03","2026-05-25","2026-06-19","2026-07-03","2026-09-07","2026-11-26","2026-12-25",
+  "2027-01-01","2027-01-18","2027-02-15","2027-03-26","2027-05-31","2027-06-18","2027-07-05","2027-09-06","2027-11-25","2027-12-24"]);
+const US_EARLY_CLOSE = { "2026-11-27": 780, "2026-12-24": 780, "2027-11-26": 780 }; // ปิด 13:00 น. เวลานิวยอร์ก
+const TH_DOW = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+function partsAt(ms, offH) {
+  const u = new Date(ms + offH * 3600e3);
+  const y = u.getUTCFullYear(), mo = u.getUTCMonth() + 1, d = u.getUTCDate();
+  return { y, mo, d, dow: u.getUTCDay(), min: u.getUTCHours() * 60 + u.getUTCMinutes(), ymd: `${y}-${pad(mo)}-${pad(d)}`, off: offH };
+}
+function nthSunday(y, m0, n) { const first = new Date(Date.UTC(y, m0, 1)).getUTCDay(); return 1 + ((7 - first) % 7) + 7 * (n - 1); }
+function etOffset(ms) {
+  const y = new Date(ms).getUTCFullYear();
+  const start = Date.UTC(y, 2, nthSunday(y, 2, 2), 7), end = Date.UTC(y, 10, nthSunday(y, 10, 1), 6);
+  return ms >= start && ms < end ? -4 : -5;
+}
+const bkkParts = (ms) => partsAt(ms, 7);
+const etParts = (ms) => partsAt(ms, etOffset(ms));
+function relBKK(absMs, nowMs) {
+  const b = bkkParts(absMs), n = bkkParts(nowMs);
+  const diff = Math.round((Date.UTC(b.y, b.mo - 1, b.d) - Date.UTC(n.y, n.mo - 1, n.d)) / 864e5);
+  const t = `${pad(Math.floor(b.min / 60))}:${pad(b.min % 60)}`;
+  return (diff === 0 ? "" : diff === 1 ? "พรุ่งนี้ " : `${TH_DOW[b.dow]} ${b.d} `) + t;
+}
+function nextDay(p, k) { const u = new Date(Date.UTC(p.y, p.mo - 1, p.d + k)); return { y: u.getUTCFullYear(), mo: u.getUTCMonth() + 1, d: u.getUTCDate(), dow: u.getUTCDay(), ymd: `${u.getUTCFullYear()}-${pad(u.getUTCMonth() + 1)}-${pad(u.getUTCDate())}` }; }
+function marketTH(nowMs = Date.now()) {
+  const p = bkkParts(nowMs), m = p.min;
+  const trading = (q) => q.dow >= 1 && q.dow <= 5 && !SET_HOLIDAYS.has(q.ymd);
+  const at = (q, min) => Date.UTC(q.y, q.mo - 1, q.d, 0, min) - 7 * 3600e3;
+  const nextOpen = () => { for (let k = 1; k < 15; k++) { const q = nextDay(p, k); if (trading(q)) return relBKK(at(q, 600), nowMs); } return "-"; };
+  const holiday = p.dow >= 1 && p.dow <= 5 && SET_HOLIDAYS.has(p.ymd);
+  if (!trading(p)) return { state: "closed", open: false, holiday, weekend: !holiday, label: `${holiday ? "วันหยุดตลาด" : "ปิดเสาร์-อาทิตย์"} · เปิด ${nextOpen()}` };
+  if (m < 570) return { state: "closed", open: false, label: "ยังไม่เปิด · เปิด 10:00" };
+  if (m < 600) return { state: "pre", open: false, label: "Pre-open · เปิด 10:00" };
+  if (m < 750) return { state: "open", open: true, label: "เปิด · พักเที่ยง 12:30" };
+  if (m < 810) return { state: "break", open: false, label: "พักเที่ยง · เปิด 14:00" };
+  if (m < 840) return { state: "pre", open: false, label: "Pre-open · เปิด 14:00" };
+  if (m < 990) return { state: "open", open: true, label: "เปิด · ปิด 16:30" };
+  if (m < 1000) return { state: "preclose", open: true, label: "Pre-close · ปิด 16:40" };
+  return { state: "closed", open: false, after: true, label: `ปิดแล้ว · เปิด ${nextOpen()}` };
+}
+function marketUS(nowMs = Date.now()) {
+  const p = etParts(nowMs), m = p.min;
+  const trading = (q) => q.dow >= 1 && q.dow <= 5 && !US_HOLIDAYS.has(q.ymd);
+  const at = (q, min) => { const guess = Date.UTC(q.y, q.mo - 1, q.d, 0, min); return guess - etOffset(guess + 5 * 3600e3) * 3600e3; };
+  const nextOpen = () => { for (let k = 1; k < 15; k++) { const q = nextDay(p, k); if (trading(q)) return relBKK(at(q, 570), nowMs); } return "-"; };
+  const close = US_EARLY_CLOSE[p.ymd] || 960;
+  const holiday = p.dow >= 1 && p.dow <= 5 && US_HOLIDAYS.has(p.ymd);
+  if (!trading(p)) return { state: "closed", open: false, holiday, label: `${holiday ? "วันหยุดตลาด" : "ปิด"} · เปิด ${nextOpen()}` };
+  if (m < 240) return { state: "closed", open: false, label: `ปิด · เปิด ${relBKK(at(p, 570), nowMs)}` };
+  if (m < 570) return { state: "pre", open: false, minsToOpen: 570 - m, label: `Pre-market · เปิด ${relBKK(at(p, 570), nowMs)}` };
+  if (m < close) return { state: "open", open: true, label: `เปิด · ปิด ${relBKK(at(p, close), nowMs)}${close < 960 ? " (ปิดเร็ว)" : ""}` };
+  if (m < 1200) return { state: "after", open: false, label: `After-hours · เปิด ${nextOpen()}` };
+  return { state: "closed", open: false, label: `ปิด · เปิด ${nextOpen()}` };
+}
+function markets(nowMs = Date.now()) { return { th: marketTH(nowMs), us: marketUS(nowMs), bkk: bkkParts(nowMs) }; }
+
+// ---------- กิจกรรมของแมว (เวลาตลาด + อารมณ์พอร์ต) ----------
+function holdsMarkets(S, settings) {
+  const fi = (settings && settings.fundInfo) || {};
+  const region = (r) => (fi[r.symbol] && fi[r.symbol].region) || (guessRegion(r.symbol) ? "foreign" : "thai");
+  const rows = S ? S.rows : [];
+  return {
+    th: rows.some((r) => r.type === "thai" || (r.type === "fund" && region(r) !== "foreign")),
+    us: rows.some((r) => r.type === "us" || (r.type === "fund" && region(r) !== "thai")),
+  };
+}
+const PLAY = {
+  wow: ["zoomies", "butterfly", "zoomies", "yarn", "butterfly"],
+  happy: ["butterfly", "yarn", "watchFly", "walk", "groom", "butterfly"],
+  normal: ["walk", "loaf", "groom", "watchFly", "yarn", "stretch", "walk"],
+  sad: ["sulk", "loaf", "sulk", "walk", "groom"],
+};
+function catActivity(S, settings, nowMs = Date.now()) {
+  const M = markets(nowMs), mood = catMood(S), H = holdsMarkets(S, settings);
+  const seed = Math.floor(nowMs / (10 * 60e3));
+  const h = M.bkk.min / 60;
+  const pick = (arr) => arr[seed % arr.length];
+  let a, sleepy = false;
+  if (H.th && M.th.open) a = "watchTH";
+  else if (H.th && M.th.state === "pre") a = "ready";
+  else if (M.th.state === "break") a = "eat";
+  else if (H.us && M.us.open) { a = "watchUS"; sleepy = h < 6; }
+  else if (H.us && M.us.state === "pre" && M.us.minsToOpen <= 30) a = "ready";
+  else if (h >= 23.5 || h < 6) a = "sleep";
+  else if (h < 9.5) a = pick(["stretch", "eat", "groom", "stretch"]);
+  else a = pick(PLAY[mood] || PLAY.normal);
+  return { a, sleepy, mood, M, H, seed };
+}
+const ACT_LINES = {
+  watchTH: ["เฝ้ากราฟหุ้นไทยอยู่", "ดูกราฟ SET ตาไม่กะพริบ", "จดโน้ตหุ้นไทยให้นะ"],
+  watchUS: ["เฝ้าตลาดอเมริกา ☕", "ดูหุ้นนอกกับกาแฟ", "อดนอนเฝ้าวอลล์สตรีท"],
+  ready: ["ยืดเส้นรอตลาดเปิด", "เตรียมพร้อม! ตลาดใกล้เปิด"],
+  eat: ["พักเที่ยง กินปลาก่อน 🐟", "อิ่มแล้วค่อยดูกราฟต่อ"],
+  sleep: ["Zzz... ตลาดหลับแล้ว", "ฝันถึงหุ้นเขียว Zzz"],
+  butterfly: ["ไล่จับผีเสื้อ~", "ผีเสื้อ! อย่าหนีนะ"],
+  yarn: ["เล่นไหมพรมฆ่าเวลา", "กลิ้งไหมพรมรอตลาด"],
+  zoomies: ["พอร์ตพุ่ง! วิ่งรอบห้องเลย", "ดีใจจนหยุดวิ่งไม่ได้!!"],
+  walk: ["เดินเล่นรอบห้อง", "ตรวจตราห้องหน่อย"],
+  stretch: ["ยืดเส้นยืดสาย~", "อรุณสวัสดิ์ทาส"],
+  groom: ["เลียขนให้หล่อ", "แต่งตัวก่อนดูพอร์ต"],
+  watchFly: ["มองผีเสื้อเพลินๆ", "มีอะไรบินอยู่นะ"],
+  sulk: ["งอนพอร์ตแป๊บ...", "แดงแบบนี้ขอนอนซึม"],
+  loaf: ["หมอบชิลๆ เป็นขนมปัง", "นอนรอให้พอร์ตเขียว"],
+};
+function actLine(S, act) {
+  if (!S) return "เพิ่มพอร์ตให้แมวดูแลหน่อย~";
+  if (S.errors.length && S.stale) return "เน็ตหลุดเหรอ ใช้ราคาเก่าไปก่อนนะ";
+  const arr = ACT_LINES[act.a] || ["เมี้ยว~"];
+  return `${arr[act.seed % arr.length]} · วันนี้ ${pctStr(S.dayPct)}`;
+}
+const faceMood = (act) => (act.a === "sleep" ? "sleep" : act.mood);
+
+// ---------- อารมณ์แมว ----------
+function catMood(S, now = new Date()) {
+  if (!S) return "normal";
+  if (S.errors.length && S.stale) return "sad";
+  if (S.dayPct >= 2) return "wow";
+  if (S.dayPct >= 0.2) return "happy";
+  if (S.dayPct <= -1) return "sad";
+  return "normal";
+}
+const LINES = {
+  wow:    ["ว้าว! พุ่ง {d} ซื้อปลาทูให้หน่อย", "พอร์ตบินแล้วเมี้ยว!! {d}", "ปังมาก {d} ทาสเก่งที่สุด"],
+  happy:  ["เมี้ยว~ วันนี้เขียว {d}", "ทาสเก่งมาก พอร์ตบวก {d}", "ขอขนมแมวเพิ่มได้ไหม~ {d}"],
+  normal: ["นิ่งๆ ชิลๆ วันนี้ {d}", "ตรวจพอร์ตให้แล้วนะทาส", "ถือยาวๆ ใจเย็นเมี้ยว"],
+  sad:    ["ฮือ แดง {d} กอดหน่อย", "ไม่เป็นไรนะ ถือยาวๆ", "แดงวันนี้ แต่ยังมีแมวนะ"],
+  sleep:  ["Zzz... ตลาดหลับแล้ว", "ฝันถึงหุ้นเขียว Zzz", "แมวนอนก่อนนะ Zzz"],
+};
+function catLine(S, mood, now = new Date()) {
+  if (!S) return "เพิ่มพอร์ตให้แมวดูแลหน่อย~";
+  if (mood === "sad" && S.errors.length && S.stale) return "เน็ตหลุดเหรอ ใช้ราคาเก่าไปก่อนนะ";
+  const arr = LINES[mood];
+  const i = (now.getHours() * 4 + Math.floor(now.getMinutes() / 15)) % arr.length;
+  return arr[i].replace("{d}", pctStr(S.dayPct));
+}
+function catAgeDays(hist) {
+  if (!hist || !hist.length) return 1;
+  const first = new Date(hist[0].d + "T00:00:00");
+  return Math.max(1, Math.floor((Date.now() - first.getTime()) / 864e5) + 1);
+}
+
+// ---------- วาดภาพพิกเซล ----------
+const colorCache = {};
+const col = (hex, a) => { const k = hex + (a ?? ""); return colorCache[k] || (colorCache[k] = a == null ? new Color(hex) : new Color(hex, a)); };
+function shade(hex, f) {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = (v) => Math.max(0, Math.min(255, Math.round(f < 0 ? v * (1 + f) : v + (255 - v) * f)));
+  return "#" + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => ch(v).toString(16).padStart(2, "0")).join("");
+}
+function newCtx(w, h) {
+  const dc = new DrawContext();
+  dc.size = new Size(w, h); dc.opaque = false; dc.respectScreenScale = false;
+  // วาดจุดโปร่งใสไว้ก่อน กันภาพว่างแล้ว getImage() คืนค่า null (บั๊ก widget ใหญ่ v2)
+  dc.setFillColor(new Color("#000000", 0.01)); dc.fillRect(new Rect(0, 0, 1, 1));
+  return dc;
+}
+function catGrid(mood, breed) {
+  const g = SPR.base.map((r) => r.split(""));
+  const B = (SPR.breeds || {})[breed] || {};
+  for (const [i, row] of Object.entries(B.rows || {})) for (let x = 0; x < row.length; x++) g[+i][x] = row[x];
+  for (const [row, i] of ((B.eyes || {})[mood] || SPR.eyes[mood])) for (let x = 0; x < row.length; x++) g[i][x] = row[x];
+  const [m, mi] = SPR.mouth[mood];
+  for (let x = 0; x < m.length; x++) g[mi][x] = m[x];
+  for (const [x, y, c] of SPR.extra[mood] || []) g[y][x] = c;
+  return g;
+}
+function catImage(mood, palName, px = 10, faceOnly = false) {
+  let g = catGrid(mood, palName);
+  if (faceOnly) g = g.slice(1, 13).map((r) => r.slice(0, 16));
+  const pal = Object.assign({}, SPR.fixed, SPR.palettes[palName] || SPR.palettes.orange);
+  const dc = newCtx(g[0].length * px, g.length * px);
+  g.forEach((row, y) => row.forEach((c, x) => {
+    if (c === ".") return;
+    dc.setFillColor(col(pal[c] || "#FF00FF"));
+    dc.fillRect(new Rect(x * px, y * px, px, px));
+  }));
+  return dc.getImage();
+}
+
+// ฟอนต์ตัวเลขพิกเซล 5x7
+const GLYPH = {
+  "0": [".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###."],
+  "1": ["..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."],
+  "2": [".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"],
+  "3": ["#####", "...#.", "..#..", "...#.", "....#", "#...#", ".###."],
+  "4": ["...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."],
+  "5": ["#####", "#....", "####.", "....#", "....#", "#...#", ".###."],
+  "6": ["..##.", ".#...", "#....", "####.", "#...#", "#...#", ".###."],
+  "7": ["#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."],
+  "8": [".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."],
+  "9": [".###.", "#...#", "#...#", ".####", "....#", "...#.", ".##.."],
+  ",": ["..", "..", "..", "..", ".#", ".#", "#."],
+  ".": [".", ".", ".", ".", ".", ".", "#"],
+  "+": [".....", "..#..", "..#..", "#####", "..#..", "..#..", "....."],
+  "-": [".....", ".....", ".....", "#####", ".....", ".....", "....."],
+  "%": ["##...", "##..#", "...#.", "..#..", ".#...", "#..##", "...##"],
+  "฿": ["..#..", "####.", "#.#.#", "####.", "#.#.#", "####.", "..#.."],
+  "K": ["#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"],
+  "M": ["#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#"],
+  " ": ["..", "..", "..", "..", "..", "..", ".."],
+};
+function pixelText(str, hex, px = 6, shadowHex) {
+  const chars = String(str).split("").filter((c) => GLYPH[c]);
+  const cols = chars.reduce((s, c) => s + GLYPH[c][0].length + 1, -1) + (shadowHex ? 1 : 0);
+  const rows = 7 + (shadowHex ? 1 : 0);
+  const dc = newCtx(Math.max(1, cols) * px, rows * px);
+  const draw = (ox, oy, color) => {
+    dc.setFillColor(col(color));
+    let x0 = 0;
+    for (const c of chars) {
+      const g = GLYPH[c];
+      g.forEach((row, y) => row.split("").forEach((p, x) => { if (p === "#") dc.fillRect(new Rect((x0 + x + ox) * px, (y + oy) * px, px, px)); }));
+      x0 += g[0].length + 1;
+    }
+  };
+  if (shadowHex) draw(1, 1, shadowHex);
+  draw(0, 0, hex);
+  return { image: dc.getImage(), cols: Math.max(1, cols), rows };
+}
+function addPixelText(stack, str, hex, maxW, ptPerPx, shadowHex) {
+  const t = pixelText(str, hex, 6, shadowHex);
+  let pt = ptPerPx;
+  if (t.cols * pt > maxW) pt = maxW / t.cols;
+  const img = stack.addImage(t.image);
+  img.imageSize = new Size(t.cols * pt, t.rows * pt);
+  return img;
+}
+
+function pixelDonut(S, cells = 26, px = 6, ink = "#2B1A12") {
+  const dc = newCtx(cells * px, cells * px);
+  const parts = CAT_ORDER.map((c) => ({ v: S.cats[c].value, color: CATS[c].color })).filter((p) => p.v > 0);
+  const total = parts.reduce((s, p) => s + p.v, 0) || 1;
+  const R = cells / 2 - 0.4, r = cells / 2 - 8.2;
+  let acc = 0;
+  const bounds = parts.map((p) => { acc += p.v / total; return { end: acc, color: p.color }; });
+  for (let y = 0; y < cells; y++) for (let x = 0; x < cells; x++) {
+    const dx = x + 0.5 - cells / 2, dy = y + 0.5 - cells / 2, d = Math.hypot(dx, dy);
+    if (d > R || d < r) continue;
+    let color;
+    if (d > R - 1.15 || d < r + 1.15) color = ink;
+    else {
+      const ang = ((Math.atan2(dx, -dy) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2);
+      const b = bounds.find((b) => ang <= b.end) || bounds[bounds.length - 1];
+      color = b ? b.color : "#888888";
+      if (d > R - 2.2) color = shade(color, 0.25);           // ไฮไลต์ขอบนอก
+      else if (d < r + 2.2) color = shade(color, -0.22);     // เงาขอบใน
+    }
+    dc.setFillColor(col(color));
+    dc.fillRect(new Rect(x * px, y * px, px, px));
+  }
+  return dc.getImage();
+}
+function allocBlocks(values, n) {
+  const total = values.reduce((s, v) => s + v, 0);
+  if (!(total > 0)) return values.map(() => 0);
+  const raw = values.map((v) => (v / total) * n);
+  const out = raw.map((x) => Math.floor(x));
+  let left = n - out.reduce((s, v) => s + v, 0);
+  raw.map((x, i) => [x - Math.floor(x), i]).sort((a, b) => b[0] - a[0]).forEach(([, i]) => { if (left > 0 && values[i] > 0) { out[i]++; left--; } });
+  values.forEach((v, i) => { if (v > 0 && out[i] === 0) { const j = out.indexOf(Math.max(...out)); out[j]--; out[i]++; } });
+  return out;
+}
+function blockBar(blocks, n, w, h, emptyHex = "#888888") {
+  // blocks: [{count, color}] → แถบบล็อกแบบเกม
+  const gap = Math.max(2, Math.round(w / n * 0.18));
+  const bw = (w - gap * (n - 1)) / n;
+  const dc = newCtx(w, h);
+  let i = 0;
+  const draw = (color, alpha) => {
+    const x = i * (bw + gap);
+    dc.setFillColor(col(color, alpha)); dc.fillRect(new Rect(x, 0, bw, h));
+    if (alpha == null) {
+      dc.setFillColor(col(shade(color, -0.3))); dc.fillRect(new Rect(x, h * 0.72, bw, h * 0.28));
+      dc.setFillColor(col(shade(color, 0.35))); dc.fillRect(new Rect(x, 0, bw, h * 0.18));
+    }
+    i++;
+  };
+  for (const b of blocks) for (let k = 0; k < b.count; k++) draw(b.color);
+  while (i < n) draw(emptyHex, 0.28);
+  return dc.getImage();
+}
+function catBar(S, n, w, h) {
+  const counts = allocBlocks(CAT_ORDER.map((c) => S.cats[c].value), n);
+  return blockBar(CAT_ORDER.map((c, i) => ({ count: counts[i], color: CATS[c].color })), n, w, h);
+}
+function historyBars(hist, w, h, upHex, downHex, rows = 10) {
+  const pts = hist.slice(-30);
+  const dc = newCtx(w, h);
+  if (pts.length < 2) {
+    const n = 30, gap = Math.max(2, Math.round(w / n * 0.25)), cw = (w - gap * (n - 1)) / n, rh = h / 10;
+    for (let i = 0; i < n; i++) { dc.setFillColor(col("#888888", 0.25)); dc.fillRect(new Rect(i * (cw + gap), h - rh, cw, rh)); }
+    return dc.getImage();
+  }
+  const vals = pts.map((p) => p.v);
+  const min = Math.min(...vals), max = Math.max(...vals), rng = max - min || 1;
+  const n = 30, gap = Math.max(2, Math.round(w / n * 0.25)), cw = (w - gap * (n - 1)) / n;
+  const rg = Math.max(1, Math.round(h / rows * 0.2)), rh = (h - rg * (rows - 1)) / rows;
+  const off = n - pts.length;
+  pts.forEach((p, i) => {
+    const level = 1 + Math.round(((p.v - min) / rng) * (rows - 1));
+    const last = i === pts.length - 1;
+    const base = last ? "#FFD84A" : p.v >= p.c ? upHex : downHex;
+    for (let k = 0; k < level; k++) {
+      const x = (i + off) * (cw + gap), y = h - (k + 1) * rh - k * rg;
+      dc.setFillColor(col(k === level - 1 ? shade(base, 0.25) : base, k === level - 1 ? null : 0.85));
+      dc.fillRect(new Rect(x, y, cw, rh));
+    }
+  });
+  for (let i = 0; i < off; i++) {
+    dc.setFillColor(col("#888888", 0.25));
+    dc.fillRect(new Rect(i * (cw + gap), h - rh, cw, rh));
+  }
+  return dc.getImage();
+}
+
+// ภาพสำหรับล็อกสกรีน (iOS แสดงเป็นโทนเดียว จึงเน้นความสว่าง/ความหนาแทนสี)
+function lockRing(S, mood, cc, settings) {
+  const N = 26, px = 8, dc = newCtx(N * px, N * px);
+  const segs = 20, R = N / 2 - 0.3, r = R - 2.4;
+  let prog = null;
+  if (S && settings.goal > 0) prog = Math.max(0, Math.min(1, S.total / settings.goal));
+  const shares = S ? allocBlocks(CAT_ORDER.map((c) => S.cats[c].value), segs) : [];
+  const segOf = []; shares.forEach((n, i) => { for (let k = 0; k < n; k++) segOf.push(i); });
+  const lum = ["#FFFFFF", "#9C9C9C", "#D6D6D6", "#7A7A7A", "#ECECEC"];
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const dx = x + 0.5 - N / 2, dy = y + 0.5 - N / 2, d = Math.hypot(dx, dy);
+    if (d > R || d < r) continue;
+    const ang = ((Math.atan2(dx, -dy) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2);
+    const si = Math.min(segs - 1, Math.floor(ang * segs));
+    if ((ang * segs) % 1 > 0.82) continue; // ช่องว่างระหว่างบล็อก
+    let c;
+    if (prog != null) c = si < Math.round(prog * segs) ? col("#FFFFFF") : col("#FFFFFF", 0.22);
+    else c = S ? col(lum[segOf[si] ?? 0]) : col("#FFFFFF", 0.3);
+    dc.setFillColor(c); dc.fillRect(new Rect(x * px, y * px, px, px));
+  }
+  const face = catGrid(mood, cc).slice(2, 13).map((row) => row.slice(0, 16));
+  const pal = Object.assign({}, SPR.fixed, SPR.palettes[cc] || SPR.palettes.orange);
+  const fp = px * 1.0, ox = (N * px - 16 * fp) / 2, oy = (N * px - 11 * fp) / 2 + px * 0.3;
+  face.forEach((row, y) => row.forEach((ch, x) => {
+    if (ch === ".") return;
+    dc.setFillColor(col(pal[ch])); dc.fillRect(new Rect(ox + x * fp, oy + y * fp, fp + 0.5, fp + 0.5));
+  }));
+  return dc.getImage();
+}
+function lockBar(S, hist, settings) {
+  if (settings.goal > 0) {
+    const filled = Math.round(Math.max(0, Math.min(1, S.total / settings.goal)) * 20);
+    return blockBar([{ count: filled, color: "#FFFFFF" }], 20, 300, 14, "#FFFFFF");
+  }
+  const counts = allocBlocks(CAT_ORDER.map((c) => S.cats[c].value), 20);
+  const lum = ["#FFFFFF", "#9C9C9C", "#D6D6D6", "#7A7A7A", "#ECECEC"];
+  return blockBar(CAT_ORDER.map((c, i) => ({ count: counts[i], color: lum[i] })), 20, 300, 14);
+}
+
+// ===== Pixel cat engine: side-view poses + room scene (shared by widget & in-app animation) =====
+function makeCatEngine(SPR) {
+  const TAU = Math.PI * 2;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  // ---------- geometry helpers ----------
+  function inEllipse(px, py, e) {
+    const dx = px - e.x, dy = py - e.y, c = Math.cos(e.rot || 0), s = Math.sin(e.rot || 0);
+    const u = dx * c + dy * s, v = -dx * s + dy * c;
+    return (u * u) / (e.rx * e.rx) + (v * v) / (e.ry * e.ry) <= 1;
+  }
+  function segDist(px, py, ax, ay, bx, by) {
+    const vx = bx - ax, vy = by - ay, wx = px - ax, wy = py - ay;
+    const t = clamp((wx * vx + wy * vy) / (vx * vx + vy * vy || 1), 0, 1);
+    return Math.hypot(px - (ax + vx * t), py - (ay + vy * t));
+  }
+  function inTri(px, py, a, b, c) {
+    const d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
+    const l1 = ((b[1] - c[1]) * (px - c[0]) + (c[0] - b[0]) * (py - c[1])) / d;
+    const l2 = ((c[1] - a[1]) * (px - c[0]) + (a[0] - c[0]) * (py - c[1])) / d;
+    return l1 >= 0 && l2 >= 0 && 1 - l1 - l2 >= 0;
+  }
+
+  // ---------- poses (cat faces right, grid 34x24, floor at y=22.5) ----------
+  const W = 34, H = 24;
+  function legs(hipB, hipF, feet, far) {
+    // feet: [backNear, backFar, frontNear, frontFar] as [x,y]
+    return [
+      { a: [hipB[0] + 1.2, hipB[1]], b: feet[1], far: true },
+      { a: [hipF[0] + 1.2, hipF[1]], b: feet[3], far: true },
+      { a: hipB, b: feet[0] },
+      { a: hipF, b: feet[2] },
+    ];
+  }
+  const POSES = {
+    walk(t) {
+      const a = t * TAU, bob = Math.round(Math.sin(a * 2) * 0.4);
+      const f = (ph, x) => [x + Math.sin(a + ph) * 2.3, 21.6 - Math.max(0, Math.cos(a + ph)) * 1.3];
+      return {
+        body: { x: 16, y: 15 + bob, rx: 8.6, ry: 4.2, rot: 0 },
+        head: { x: 25.2, y: 10.3 + bob, r: 4.3 },
+        legs: legs([10.6, 16.5 + bob], [21, 16.5 + bob], [f(0, 10.6), f(Math.PI, 11.8), f(Math.PI, 21), f(0, 22.2)]),
+        tail: [[8, 13.5 + bob], [5, 11.5], [3.8 + Math.sin(a) * 0.7, 8.5], [4.6 + Math.sin(a) * 1.2, 5.8]],
+      };
+    },
+    run(t) {
+      const a = t * TAU, k = Math.cos(a); // k=1 stretch, k=-1 gather
+      const lift = Math.max(0, k) * 2.2;
+      const by = 14.6 - lift;
+      return {
+        body: { x: 16.5, y: by, rx: 9.2 + k * 0.6, ry: 3.9, rot: -0.08 * k },
+        head: { x: 26.2 + k * 0.4, y: by - 4.2, r: 4.2 },
+        ears: "back",
+        legs: legs([10.5, by + 2], [22, by + 2], [
+          [10.5 - 4.6 * k - 1, 21.6 - lift * 0.7], [11.6 - 4.2 * k, 21.6 - lift * 0.9],
+          [22 + 4.6 * k + 1, 21.6 - lift * 0.8], [23 + 4.2 * k, 21.6 - lift * 0.6]]),
+        tail: [[8, by - 1], [4.5, by - 2.2 - k], [1.5, by - 3 - k * 1.2]],
+      };
+    },
+    pounce(t) { // crouch → leap
+      if (t < 0.45) {
+        const w = Math.sin(t * 40) * 0.6; // butt wiggle
+        return {
+          body: { x: 16 + w * 0.3, y: 18.2, rx: 8.4, ry: 3.6, rot: -0.14 },
+          head: { x: 25, y: 16.2, r: 4.1 }, eyes: "wide",
+          legs: legs([10.6, 19], [21, 19.5], [[9, 21.7], [10.2, 21.7], [24, 21.7], [25, 21.7]]),
+          tail: [[8, 16.5], [4.5, 15 + w], [2, 13 - w], [1.5, 10 + w]],
+        };
+      }
+      const k = (t - 0.45) / 0.55, up = Math.sin(k * Math.PI) * 6;
+      return {
+        body: { x: 16 + k * 3, y: 14.5 - up, rx: 9.4, ry: 3.8, rot: -0.35 + k * 0.5 },
+        head: { x: 25.5 + k * 3, y: 8.6 - up + k * 3, r: 4.2 }, eyes: "wide", ears: "back",
+        legs: legs([11 + k * 3, 16 - up], [21 + k * 3, 13 - up], [[5 + k * 3, 19 - up * 0.3], [6 + k * 3, 18.5 - up * 0.3], [28 + k * 3, 10 - up + k * 4], [29 + k * 3, 11 - up + k * 4]]),
+        tail: [[8 + k * 3, 16 - up], [3 + k * 3, 17 - up * 0.6], [0.5 + k * 3, 18 - up * 0.4]],
+      };
+    },
+    sit(t, o = {}) {
+      const sway = Math.sin(t * TAU) * 1;
+      const head = o.lookUp ? { x: 19, y: 5.6, r: 4.3 } : { x: 18.6, y: 6.6, r: 4.3 };
+      const p = {
+        body: { x: 14.6, y: 15.2, rx: 7, ry: 4.6, rot: -1.15 },
+        extra: [{ x: 12, y: 18.4, rx: 5, ry: 3.8, rot: 0 }],
+        head, eyes: o.eyes,
+        legs: [{ a: [18.2, 13.5], b: [19.6, 21.7], far: true }, { a: [17, 13.5], b: [18, 21.7] }],
+        tail: [[9, 21], [4.5, 21.6], [1.8 + sway * 0.3, 20.6], [1.4 + sway, 18.4]],
+      };
+      if (o.groom) { p.legs[1] = { a: [17, 13.8], b: [21.6, 10.4] }; p.eyes = "closed"; }
+      if (o.paw) { const k = Math.sin(t * TAU); p.legs[1] = { a: [17, 13.8], b: [21 + k * 2.5, 13.5 - Math.max(0, k) * 3] }; }
+      return p;
+    },
+    loaf(t, o = {}) {
+      const breathe = Math.sin(t * TAU) * 0.25;
+      return {
+        body: { x: 15.5, y: 18.3 - breathe, rx: 9.2, ry: 4 + breathe, rot: 0 },
+        head: { x: 24.3, y: 14.4, r: 4.3 }, eyes: o.eyes,
+        legs: [{ a: [22, 21], b: [27.2, 21.7] }],
+        tail: [[7, 20.8], [12, 21.8], [18, 21.8]],
+      };
+    },
+    sleep(t) {
+      const breathe = Math.sin(t * TAU) * 0.3;
+      return {
+        body: { x: 15.5, y: 18 - breathe, rx: 8.6, ry: 4.6 + breathe, rot: 0 },
+        head: { x: 22.2, y: 18.2, r: 3.9 }, eyes: "closed", ears: "low",
+        legs: [],
+        tail: [[8, 20.6], [12, 22], [19, 22.1], [25, 21.4]],
+      };
+    },
+    stretch(t) {
+      const k = (Math.sin(t * TAU) + 1) / 2;
+      return {
+        body: { x: 15.5, y: 15.8 + k * 0.6, rx: 9, ry: 3.8, rot: 0.32 },
+        head: { x: 25.4, y: 16 + k * 0.5, r: 4.1 }, eyes: "closed",
+        legs: legs([10, 13.5], [21, 18.6], [[9.6, 21.7], [10.8, 21.7], [28.5 + k, 21.7], [29.6 + k, 21.7]]),
+        tail: [[7.6, 11.6], [5, 8], [5.5 + k, 4.5], [7.5 + k, 2.8]],
+      };
+    },
+    eat(t) {
+      const nib = Math.round(Math.sin(t * TAU * 2) * 0.5);
+      return {
+        body: { x: 15, y: 15.4, rx: 8.6, ry: 4.2, rot: 0.12 },
+        head: { x: 24.6, y: 16 + nib, r: 4.1 }, eyes: "closed",
+        legs: legs([9.8, 17], [20.5, 17.8], [[9.4, 21.7], [10.6, 21.7], [21.2, 21.7], [22.4, 21.7]]),
+        tail: [[7, 13.6], [4.3, 11], [3.4, 8], [4.6, 5.6 + Math.sin(t * TAU)]],
+      };
+    },
+    // นั่งหน้าคอมดูกราฟ (หันขวาไปทางจอ)
+    work(t, o = {}) {
+      const p = POSES.sit(t, { eyes: o.eyes || "open", paw: o.type });
+      p.head = { x: 19, y: 6.8, r: 4.3 };
+      return p;
+    },
+  };
+
+  // ---------- rasterise one cat frame ----------
+  function catCells(poseName, t, opts = {}) {
+    const P = (POSES[poseName] || POSES.sit)(t, opts.o || {});
+    const g = Array.from({ length: H }, () => new Array(W).fill("."));
+    const set = (x, y, c) => { if (x >= 0 && x < W && y >= 0 && y < H) g[y][x] = c; };
+    const each = (fn) => { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) fn(x, y, x + 0.5, y + 0.5); };
+    const lw = 2.3;
+    // far legs (darker)
+    for (const L of P.legs.filter((l) => l.far)) each((x, y, cx, cy) => { if (segDist(cx, cy, L.a[0], L.a[1], L.b[0], L.b[1]) <= lw / 2) set(x, y, "D"); });
+    // tail
+    for (let i = 0; i < P.tail.length - 1; i++) {
+      const [a, b] = [P.tail[i], P.tail[i + 1]];
+      const th = lerp(1.15, 0.85, i / Math.max(1, P.tail.length - 2));
+      each((x, y, cx, cy) => { if (segDist(cx, cy, a[0], a[1], b[0], b[1]) <= th) set(x, y, i === P.tail.length - 2 ? "D" : "O"); });
+    }
+    // body
+    const bodies = [P.body].concat(P.extra || []);
+    each((x, y, cx, cy) => {
+      for (const e of bodies) if (inEllipse(cx, cy, e)) {
+        const belly = cy > P.body.y + P.body.ry * 0.35 && Math.abs(P.body.rot) < 0.5;
+        const chest = Math.abs(P.body.rot) >= 0.5 && cx > P.body.x + 0.8;
+        const stripe = (Math.floor(cx + cy * 0.25) % 4 === 0) && cy < P.body.y + 0.5;
+        set(x, y, belly || chest ? "L" : stripe ? "D" : "O");
+      }
+    });
+    // near legs (+ white paws)
+    for (const L of P.legs.filter((l) => !l.far)) each((x, y, cx, cy) => {
+      if (segDist(cx, cy, L.a[0], L.a[1], L.b[0], L.b[1]) <= lw / 2) set(x, y, Math.hypot(cx - L.b[0], cy - L.b[1]) < 1.3 ? "L" : "O");
+    });
+    // head + ears
+    const h = P.head, r = h.r, ear = opts.ears || P.ears || "up";
+    const earH = ear === "fold" ? 1.4 : ear === "small" ? 2.3 : ear === "low" ? 2 : ear === "back" ? 2.6 : 3.4;
+    const tipShift = ear === "back" ? -1.6 : ear === "fold" ? 1 : 0;
+    const ears = [
+      [[h.x - r * 0.85, h.y - r * 0.35], [h.x - r * 0.1, h.y - r * 0.9], [h.x - r * 0.75 + tipShift, h.y - r * 0.6 - earH]],
+      [[h.x + r * 0.05, h.y - r * 0.95], [h.x + r * 0.85, h.y - r * 0.4], [h.x + r * 0.6 + tipShift, h.y - r * 0.65 - earH]],
+    ];
+    each((x, y, cx, cy) => {
+      for (const e of ears) if (inTri(cx, cy, e[0], e[1], e[2])) {
+        const c = [(e[0][0] + e[1][0] + e[2][0]) / 3, (e[0][1] + e[1][1] + e[2][1]) / 3];
+        set(x, y, ear !== "fold" && Math.hypot(cx - c[0], cy - c[1]) < earH * 0.38 ? "P" : ear === "fold" ? "D" : "O");
+      }
+      if (Math.hypot(cx - h.x, cy - h.y) <= r) {
+        const muzzle = cx > h.x + r * 0.05 && cy > h.y + r * 0.2;
+        const brow = opts.tabby !== false && cy < h.y - r * 0.45 && Math.floor(cx) % 2 === 0;
+        set(x, y, muzzle ? "L" : brow ? "D" : "O");
+      }
+    });
+    // face
+    const ex = Math.floor(h.x + r * 0.35), ey = Math.floor(h.y - r * 0.15);
+    const ex2 = Math.floor(h.x + r * 0.85);
+    const eyes = P.eyes || opts.eyes || "open";
+    if (eyes === "closed") { set(ex - 1, ey + 1, "K"); set(ex, ey + 1, "K"); set(ex2, ey + 1, "K"); }
+    else if (eyes === "happy") { set(ex - 1, ey + 1, "K"); set(ex, ey, "K"); set(ex + 1, ey + 1, "K"); set(ex2, ey + 1, "K"); }
+    else if (eyes === "half") { set(ex, ey, "K"); set(ex, ey + 1, "E"); set(ex2, ey, "K"); set(ex2, ey + 1, "E"); }
+    else {
+      set(ex, ey, opts.iris ? "G" : "E"); set(ex, ey + 1, "E"); set(ex2, ey, opts.iris ? "G" : "E"); set(ex2, ey + 1, "E");
+      if (eyes === "wide") { set(ex - 1, ey, "E"); set(ex - 1, ey + 1, "E"); }
+      set(ex, ey, "W");
+    }
+    set(Math.floor(h.x + r - 0.2), Math.floor(h.y + r * 0.3), "N");
+    set(Math.floor(h.x + r * 0.1), Math.floor(h.y + r * 0.45), "P"); // cheek
+    // outline pass (4-neighbour)
+    const out = g.map((row) => row.slice());
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (g[y][x] !== ".") continue;
+      if ((g[y - 1] && g[y - 1][x] !== ".") || (g[y + 1] && g[y + 1][x] !== ".") || (g[y][x - 1] && g[y][x - 1] !== ".") || (g[y][x + 1] && g[y][x + 1] !== ".")) {
+        if (g[y][x - 1] !== undefined || g[y][x + 1] !== undefined) out[y][x] = "K";
+      }
+    }
+    return out;
+  }
+
+  // ---------- palettes ----------
+  function catPalette(name) {
+    return Object.assign({}, SPR.fixed, SPR.palettes[name] || SPR.palettes.orange);
+  }
+  function breedOpts(name) {
+    if (name === "scottish") return { ears: "fold", iris: true };
+    if (name === "british") return { ears: "small", tabby: false };
+    if (name === "white" || name === "black") return { tabby: false };
+    return {};
+  }
+
+  // ---------- scene ----------
+  // painter: (x, y, w, h, hex, alpha?) in cell units
+  function skyFor(hour) {
+    if (hour < 5 || hour >= 20) return { sky: ["#141833", "#1C2247", "#252C5C"], wall: "#2E2A4A", wall2: "#26223F", floor: "#4A3A5A", floor2: "#3E3050", night: true };
+    if (hour < 7) return { sky: ["#3B3F7A", "#C7799A", "#F7B58C"], wall: "#D9C3A5", wall2: "#CDB595", floor: "#A0704A", floor2: "#8E6140" };
+    if (hour < 17) return { sky: ["#6EC1FF", "#8FD3FF", "#BDE7FF"], wall: "#F1DFC2", wall2: "#E8D2B0", floor: "#B07A4E", floor2: "#9C6A42" };
+    return { sky: ["#3D3A78", "#E0768A", "#FFB070"], wall: "#E5C9A6", wall2: "#D8BA93", floor: "#A36F48", floor2: "#8F603E" };
+  }
+  function drawSprite(P, rows, pal, ox, oy, flip = false, alpha) {
+    const w = rows[0].length;
+    rows.forEach((row, y) => {
+      for (let x = 0; x < w; x++) {
+        const c = row[x];
+        if (c === "." || c === " ") continue;
+        P(ox + (flip ? w - 1 - x : x), oy + y, 1, 1, pal[c] || c, alpha);
+      }
+    });
+  }
+  const PROPS = {
+    laptop: { rows: ["..KKKKKKKKK", "..KSSSSSSSK", "..KSSSSSSSK", "..KSSSSSSSK", "..KSSSSSSSK", "..KKKKKKKKK", "......KK...", "KKKKKKKKKKK", "MMMMMMMMMMM"], pal: { K: "#2B2B36", S: "#10141F", M: "#8A8FA3" } },
+    bowl: { rows: ["..FFF..", ".FFFFF.", "KRRRRRK", ".KRRRK."], pal: { K: "#5A1E26", R: "#E2464F", F: "#F7C27A" } },
+    mug: { rows: [".W.W.", "KKKKK", "KCCCKK", "KCCCK.K", "KCCCKK", "KKKKK"], pal: { K: "#3B2418", C: "#F4E9D2", W: "#FFFFFF" } },
+    yarn: { rows: [".KKK.", "KRYRK", "KYRYK", "KRYRK", ".KKK."], pal: { K: "#7A2F5A", R: "#FF7AB6", Y: "#FFC0DD" } },
+    fly1: { rows: ["YY.YY", "YWKWY", ".YKY.", "..K.."], pal: { Y: "#FFD84A", W: "#FFF3B0", K: "#3B2418" } },
+    fly2: { rows: [".....", "..K..", "YWKWY", "YY.YY"], pal: { Y: "#FFD84A", W: "#FFF3B0", K: "#3B2418" } },
+    coin: { rows: [".YY.", "YWYY", "YYYO", ".OO."], pal: { Y: "#FFD84A", W: "#FFF6C2", O: "#C8901E" } },
+    cloud: { rows: ["..WWW...", ".WWWWWW.", "WWWWWWWW", ".B..B..B", "B..B..B."], pal: { W: "#9AA6B8", B: "#5BC0FF" } },
+    heart: { rows: ["PP.PP", "PPPPP", ".PPP.", "..P.."], pal: { P: "#FF6F91" } },
+    sweat: { rows: [".B", "BB", "BB"], pal: { B: "#5BC0FF" } },
+    z: { rows: ["ZZZ", ".Z.", "ZZZ"], pal: { Z: "#B9CCFF" } },
+    moon: { rows: [".YYY.", "YYYY.", "YYY..", "YYYY.", ".YYY."], pal: { Y: "#FFE9A8" } },
+    sun: { rows: ["..Y..", ".YYY.", "YYYYY", ".YYY.", "..Y.."], pal: { Y: "#FFD84A" } },
+    plant: { rows: [".G.G.", "GGGGG", ".GGG.", "..G..", ".PPP.", ".PPP."], pal: { G: "#4FAF6A", P: "#C0703A" } },
+    lamp: { rows: [".YYY.", "YYYYY", "..K..", "..K..", "..K..", ".KKK."], pal: { Y: "#FFE38A", K: "#3B2418" } },
+  };
+  function prop(P, name, x, y, flip) { const p = PROPS[name]; drawSprite(P, p.rows, p.pal, Math.round(x), Math.round(y), flip); return p.rows[0].length; }
+
+  // scene state: { activity, mood, t (0..1 loop), seed, hour, catColor, chartUp, w, h }
+  function renderScene(P, S) {
+    const { w, h } = S, hour = S.hour, th = skyFor(hour);
+    const floorY = h - 3;
+    // wall + window
+    P(0, 0, w, floorY, th.wall);
+    for (let x = 0; x < w; x += 6) P(x, 0, 3, floorY, th.wall2, 0.5);
+    const winW = Math.min(22, Math.floor(w * 0.3)), winH = Math.min(14, Math.floor(floorY * 0.55));
+    const wx = w - winW - 4, wy = 2;
+    if (h >= 26) {
+      P(wx - 1, wy - 1, winW + 2, winH + 2, "#5A3A28");
+      th.sky.forEach((c, i) => P(wx, wy + Math.floor((winH * i) / 3), winW, Math.ceil(winH / 3), c));
+      if (th.night) {
+        for (let i = 0; i < 7; i++) P(wx + ((i * 7 + S.seed) % winW), wy + ((i * 5 + S.seed * 3) % (winH - 1)), 1, 1, "#FFFFFF", i % 2 ? 0.6 : 1);
+        prop(P, "moon", wx + winW - 7, wy + 2);
+      } else prop(P, "sun", wx + 3, wy + 2);
+      P(wx + Math.floor(winW / 2), wy, 1, winH, "#5A3A28");
+      P(wx, wy + Math.floor(winH / 2), winW, 1, "#5A3A28");
+    }
+    // floor
+    P(0, floorY, w, 3, th.floor);
+    for (let x = (S.seed % 5); x < w; x += 9) P(x, floorY + 1, 6, 1, th.floor2);
+    if (th.night) P(0, 0, w, h, "#0B0820", 0.18);
+
+    // activity layout
+    const pal = catPalette(S.catColor), bo = breedOpts(S.catColor);
+    const catY = floorY - 22;
+    const A = S.activity, t = S.t;
+    let catX = Math.round(S.catX ?? (w - 34) / 2), face = S.face ?? 1, pose = "sit", o = {};
+    const flyFrame = Math.floor((S.ft ?? t) * 6) % 2 ? "fly1" : "fly2";
+    const moodEyes = S.mood === "sad" ? "half" : S.mood === "happy" || S.mood === "wow" ? "happy" : "open";
+
+    if (A === "watchTH" || A === "watchUS" || A === "ready") {
+      const lx = Math.min(w - 13, catX + 28);
+      catX = lx - 27; pose = "work"; o = { eyes: A === "ready" ? "open" : S.mood === "sad" ? "half" : "open", type: A !== "ready" };
+      // desk
+      P(lx - 2, floorY - 4, 14, 1, "#7A4E30"); P(lx - 1, floorY - 3, 1, 3, "#5A3A22"); P(lx + 10, floorY - 3, 1, 3, "#5A3A22");
+      prop(P, "laptop", lx - 1, floorY - 13);
+      // mini chart on screen
+      const up = S.chartUp !== false, cc = up ? "#5BE38A" : "#FF6B7A";
+      const pts = [];
+      for (let i = 0; i < 7; i++) { const v = Math.round(2 + Math.sin(i * 1.3 + S.seed) * 1.2 + (up ? (6 - i) * -0.35 : i * -0.35) + 1.5); pts.push(clamp(v, 0, 3)); }
+      pts.forEach((v, i) => P(lx + 2 + i, floorY - 12 + v, 1, 1, cc));
+      if (A === "watchUS") prop(P, "mug", lx + 12 > w - 6 ? catX - 2 : lx + 12, floorY - 9);
+      if (th.night && A === "watchUS") P(lx + 1, floorY - 13, 9, 6, "#9FD0FF", 0.15);
+    } else if (A === "eat") {
+      pose = "eat"; o = {};
+      prop(P, "bowl", catX + 27, floorY - 4);
+    } else if (A === "sleep") {
+      pose = "sleep";
+      P(catX + 3, floorY - 1, 28, 2, "#E2464F"); P(catX + 4, floorY, 26, 1, "#9E2A3A");
+      const zt = Math.floor(t * 3);
+      for (let i = 0; i <= zt; i++) prop(P, "z", catX + 26 + i * 3, catY + 10 - i * 4);
+    } else if (A === "butterfly") {
+      // cat chases a butterfly across the room
+      const fx = lerp(6, w - 10, (Math.sin(t * TAU) + 1) / 2), fy = catY + 2 + Math.sin(t * TAU * 3) * 3;
+      const dir = Math.cos(t * TAU) >= 0 ? 1 : -1;
+      face = dir; catX = Math.round(clamp(fx - (dir > 0 ? 32 : -2), 0, w - 34));
+      pose = Math.abs(Math.cos(t * TAU)) < 0.25 ? "pounce" : "run";
+      prop(P, flyFrame, fx, fy);
+    } else if (A === "yarn") {
+      const k = (Math.sin(t * TAU) + 1) / 2, yx = lerp(4, w - 10, k);
+      face = Math.cos(t * TAU) >= 0 ? 1 : -1;
+      catX = Math.round(clamp(yx - (face > 0 ? 30 : -4), 0, w - 34));
+      pose = "walk"; prop(P, "yarn", yx, floorY - 5);
+    } else if (A === "zoomies") {
+      const k = (t * 2) % 1; face = t < 0.5 ? 1 : -1;
+      catX = Math.round(face > 0 ? lerp(-30, w, k) : lerp(w, -30, k)); pose = "run";
+      for (let i = 0; i < 4; i++) prop(P, "coin", (S.seed * 7 + i * 13 + t * 40) % (w - 4), (i * 5 + t * h * 2) % (floorY - 4));
+    } else if (A === "walk") {
+      const k = (Math.sin(t * TAU) + 1) / 2; face = Math.cos(t * TAU) >= 0 ? 1 : -1;
+      catX = Math.round(lerp(-2, w - 32, k)); pose = "walk";
+      prop(P, "plant", 2, floorY - 6);
+    } else if (A === "stretch") { pose = "stretch"; }
+    else if (A === "groom") { pose = "sit"; o = { groom: true }; }
+    else if (A === "watchFly") {
+      pose = "sit"; o = { lookUp: true, eyes: "wide" };
+      prop(P, flyFrame, catX + 22 + Math.sin(t * TAU) * 4, catY - 3 + Math.cos(t * TAU * 2) * 2);
+    } else if (A === "sulk") {
+      pose = "loaf"; face = -1; o = { eyes: "half" };
+      prop(P, "cloud", catX + 12, Math.max(0, catY - 4));
+    } else if (A === "loaf") { pose = "loaf"; o = { eyes: moodEyes }; }
+    else { pose = "sit"; o = { eyes: moodEyes }; }
+
+    if (S.sleepy && (A === "watchUS" || A === "watchTH")) o.eyes = "half";
+    const cells = catCells(pose, S.ft ?? t, Object.assign({}, bo, { o }));
+    drawSprite(P, cells.map((r) => r.join("")), pal, catX, catY, face < 0);
+    // mood accents
+    if (S.mood === "happy" && A !== "sleep") prop(P, "heart", catX + (face > 0 ? 28 : 0), catY + 1 + Math.round(Math.sin(t * TAU * 2)));
+    if (S.mood === "sad" && (A === "watchTH" || A === "watchUS")) prop(P, "sweat", catX + 23, catY + 4);
+    if (S.mood === "wow" && A !== "zoomies" && A !== "sleep") for (let i = 0; i < 3; i++) prop(P, "coin", catX + 6 + i * 9, catY - 2 + ((Math.floor(t * 6) + i) % 3));
+    return { catX, face };
+  }
+
+  return { catCells, renderScene, POSES, W, H, PROPS };
+}
+const CAT_ENGINE = makeCatEngine(SPR);
+// วาดฉากห้องแมวเป็นภาพสำหรับ widget (widget ขยับเองไม่ได้ จึงเปลี่ยนท่า/ตำแหน่งทุกครั้งที่รีเฟรช)
+function sceneImage(S, act, settings, wPt, hPt, ptPerCell = 2) {
+  const cw = Math.floor(wPt / ptPerCell), ch = Math.floor(hPt / ptPerCell), px = 6;
+  const dc = newCtx(cw * px, ch * px);
+  const P = (x, y, w, h, hex, a) => { if (w <= 0 || h <= 0) return; dc.setFillColor(col(hex, a == null || a >= 1 ? null : a)); dc.fillRect(new Rect(x * px, y * px, w * px, h * px)); };
+  const sd = act.seed;
+  const thUp = S ? S.cats.thai.day >= 0 : true, usUp = S ? S.cats.us.day + S.cats.fund.day >= 0 : true;
+  CAT_ENGINE.renderScene(P, {
+    w: cw, h: ch, activity: act.a, mood: act.mood, sleepy: act.sleepy,
+    t: ((sd * 0.618) % 1), ft: ((sd * 0.377) % 1), seed: sd % 97, hour: act.M.bkk.min / 60,
+    catColor: settings.catColor, chartUp: act.a === "watchUS" ? usUp : thUp,
+    catX: Math.round(((sd * 13) % Math.max(1, cw - 34))),
+  });
+  return dc.getImage();
+}
+function marketRow(parent, act, size = 8.5, compactLabels = false) {
+  const r = parent.addStack(); r.layoutVertically();
+  for (const [flag, name, st] of [["🇹🇭", "SET", act.M.th], ["🇺🇸", "US", act.M.us]]) {
+    const l = r.addStack(); l.layoutHorizontally(); l.centerAlignContent();
+    txt(l, "●", size, { color: st.open ? T.up : st.state === "pre" || st.state === "break" || st.state === "after" ? new Color("#E8A33A") : T.sub, w: "heavy" });
+    l.addSpacer(3);
+    txt(l, `${flag} ${name} ${compactLabels ? st.label.split(" · ")[0] : st.label}`, size, { color: T.text, w: "semi" });
+  }
+  return r;
+}
+
+// ---------- ธีม ----------
+function makeTheme(mode) {
+  const L = { bg: "#F4E9D2", panel: "#FFF8E8", ink: "#3B2418", text: "#3B2418", sub: "#8A6E57", up: "#23994A", down: "#D93A45", bubble: "#FFFFFF" };
+  const D = { bg: "#1D1A2F", panel: "#2A2542", ink: "#0B0816", text: "#F3EAD7", sub: "#A79CC8", up: "#5BE38A", down: "#FF6B7A", bubble: "#352F55" };
+  const pick = (k) => mode === "light" ? new Color(L[k]) : mode === "dark" ? new Color(D[k]) : Color.dynamic(new Color(L[k]), new Color(D[k]));
+  const t = {};
+  for (const k of Object.keys(L)) t[k] = pick(k);
+  t.hex = mode === "light" ? L : D;
+  // LCD (สีคงที่ทั้งสองธีม)
+  t.lcd = new Color("#221E38"); t.lcdBorder = new Color("#0B0816");
+  t.lcdLabel = new Color("#8E84C6");
+  t.lcdHex = { digit: "#FFE38A", shadow: "#6B4E1A", up: "#6BF08F", down: "#FF7A85", upSh: "#1E5B33", downSh: "#6B1E28" };
+  return t;
+}
+let T = makeTheme("auto");
+
+// ---------- ส่วนประกอบ widget ----------
+const shown5 = (S) => CAT_ORDER.filter((c) => S.cats[c].value > 0).length > 4;
+// ตัวอักษรอ่านง่าย (SF Rounded) ส่วนความเป็นพิกเซลมาจากภาพแมว กรอบ และตัวเลข LCD
+function F(size, w = "bold", mono = false) {
+  const m = mono ? {
+    regular: Font.regularMonospacedSystemFont, medium: Font.mediumMonospacedSystemFont,
+    semi: Font.semiboldMonospacedSystemFont, bold: Font.boldMonospacedSystemFont, heavy: Font.heavyMonospacedSystemFont,
+  } : {
+    regular: Font.regularRoundedSystemFont, medium: Font.mediumRoundedSystemFont,
+    semi: Font.semiboldRoundedSystemFont, bold: Font.boldRoundedSystemFont, heavy: Font.heavyRoundedSystemFont,
+  };
+  return (m[w] || m.bold).call(Font, size);
+}
+function txt(stack, s, size, opts = {}) {
+  const t = stack.addText(String(s));
+  t.font = F(size, opts.w || "semi", !!opts.mono);
+  t.textColor = opts.color || T.text;
+  t.lineLimit = opts.lines || 1;
+  t.minimumScaleFactor = opts.scale ?? 0.55;
+  if (opts.right) t.rightAlignText();
+  if (opts.center) t.centerAlignText();
+  return t;
+}
+function panel(parent, opts = {}) {
+  const p = parent.addStack();
+  p.layoutVertically();
+  p.backgroundColor = opts.bg || T.panel;
+  p.borderColor = opts.border || T.ink;
+  p.borderWidth = opts.bw ?? 2;
+  p.cornerRadius = opts.radius ?? 3;
+  const [a, b, c, d] = opts.pad || [6, 8, 6, 8];
+  p.setPadding(a, b, c, d);
+  if (opts.size) p.size = opts.size;
+  return p;
+}
+function pixDot(stack, hex, d = 7) {
+  const s = stack.addStack(); s.size = new Size(d, d);
+  s.backgroundColor = col(hex); s.borderColor = T.ink; s.borderWidth = 1;
+}
+function bubble(parent, text, size, lines = 2, width) {
+  const b = panel(parent, { bg: T.bubble, pad: [4, 7, 4, 7], radius: 4 });
+  if (width) b.size = new Size(width, 0);
+  txt(b, text, size, { w: "semi", lines, scale: 0.6 });
+  return b;
+}
+function lcd(parent, S, maxW, digitPt, showPL = true) {
+  const p = panel(parent, { bg: T.lcd, border: T.lcdBorder, pad: [6, 8, 6, 8], radius: 2 });
+  const top = p.addStack(); top.layoutHorizontally(); top.centerAlignContent();
+  txt(top, "TOTAL", 8, { color: T.lcdLabel, w: "heavy", mono: true });
+  top.addSpacer();
+  txt(top, "THB", 8, { color: T.lcdLabel, w: "heavy", mono: true });
+  p.addSpacer(3);
+  const totalStr = S.total >= 1e8 ? "฿" + compact(S.total) : "฿" + fmt(S.total);
+  addPixelText(p, totalStr, T.lcdHex.digit, maxW - 16, digitPt, T.lcdHex.shadow);
+  if (showPL) {
+    p.addSpacer(4);
+    const up = S.pl >= 0;
+    txt(p, `${signed(S.pl)}  (${pctStr(S.plPct)})`, Math.max(10, digitPt * 4.3), { color: new Color(up ? T.lcdHex.up : T.lcdHex.down), w: "bold" });
+  }
+  return p;
+}
+function refreshLine(parent, S, size = 8.5, withDate = false) {
+  const r = parent.addStack(); r.layoutHorizontally(); r.centerAlignContent();
+  txt(r, `⟳ ${withDate ? "รีเฟรชล่าสุด " + thDate(S.at) + " " : ""}${hm(S.at)} · `, size, { color: T.sub, w: "medium" });
+  const d = r.addDate(S.at);
+  d.applyRelativeStyle();
+  d.font = F(size, "medium"); d.textColor = T.sub; d.lineLimit = 1;
+  txt(r, " ที่แล้ว" + (S.stale ? " ⚠︎" : ""), size, { color: S.stale ? T.down : T.sub, w: "medium" });
+  return r;
+}
+const plColor = (n) => (n >= 0 ? T.up : T.down);
+
+function emptyWidget(w, settings) {
+  w.setPadding(12, 12, 12, 12);
+  const row = w.addStack(); row.layoutHorizontally(); row.centerAlignContent();
+  const ci = row.addImage(catImage("normal", settings.catColor)); ci.imageSize = new Size(55, 53);
+  row.addSpacer(8);
+  bubble(row, "เพิ่มพอร์ตให้แมวดูแลหน่อย~ แตะเพื่อเปิด", 10, 3);
+  return w;
+}
+
+function buildWidget(S, hist, family, settings) {
+  T = makeTheme(settings.theme);
+  const w = new ListWidget();
+  w.backgroundColor = T.bg;
+  w.refreshAfterDate = new Date(Date.now() + REFRESH_MIN * 60 * 1000);
+  w.url = URLScheme.forRunningScript();
+  const act = catActivity(S, settings);
+  const mood = faceMood(act);
+  const line = actLine(S, act);
+  const cc = settings.catColor;
+  try { w.url = URLScheme.forRunningScript() + "?open=room"; } catch (e) {}
+  // รีเฟรชถี่ขึ้นช่วงตลาดเปิด (iOS เป็นผู้ตัดสินเวลาจริง)
+  w.refreshAfterDate = new Date(Date.now() + (act.M.th.open || act.M.us.open ? 10 : REFRESH_MIN) * 60 * 1000);
+
+  if (family === "accessoryCircular") {
+    try { w.addAccessoryWidgetBackground = true; } catch (e) {}
+    w.setPadding(0, 0, 0, 0);
+    const s = w.addStack(); s.layoutVertically(); s.centerAlignContent();
+    const ir = s.addStack(); ir.layoutHorizontally(); ir.addSpacer();
+    const ci = ir.addImage(lockRing(S, mood, cc, settings)); ci.imageSize = new Size(50, 50);
+    ir.addSpacer();
+    const tr = s.addStack(); tr.layoutHorizontally(); tr.addSpacer();
+    const t = tr.addText(S ? (S.dayPct >= 0 ? "▲" : "▼") + Math.abs(S.dayPct).toFixed(1) + "%" : "–");
+    t.font = Font.heavyRoundedSystemFont(10); t.minimumScaleFactor = 0.5; t.lineLimit = 1;
+    tr.addSpacer();
+    return w;
+  }
+  if (family === "accessoryRectangular") {
+    try { w.addAccessoryWidgetBackground = true; } catch (e) {}
+    w.setPadding(4, 8, 4, 8);
+    const r = w.addStack(); r.layoutHorizontally(); r.centerAlignContent();
+    const ci = r.addImage(catImage(mood, cc, 8, true)); ci.imageSize = new Size(34, 26);
+    r.addSpacer(6);
+    const c = r.addStack(); c.layoutVertically();
+    if (!S) { const e = c.addText("เพิ่มพอร์ตให้แมวก่อนนะ"); e.font = Font.mediumRoundedSystemFont(11); return w; }
+    const a1 = c.addText("฿" + fmt(S.total)); a1.font = Font.heavyRoundedSystemFont(16); a1.minimumScaleFactor = 0.55; a1.lineLimit = 1;
+    const b1 = c.addText(`${S.dayPct >= 0 ? "▲" : "▼"} ${pctStr(S.dayPct)} วันนี้`); b1.font = Font.boldRoundedSystemFont(10.5); b1.minimumScaleFactor = 0.6; b1.lineLimit = 1;
+    const d1 = c.addText(`รวม ${pctStr(S.plPct)} · ⟳${hm(S.at)}`); d1.font = Font.mediumRoundedSystemFont(9.5); d1.textOpacity = 0.75; d1.minimumScaleFactor = 0.6; d1.lineLimit = 1;
+    w.addSpacer(3);
+    const bar = w.addImage(lockBar(S, hist, settings)); bar.imageSize = new Size(150, 7); bar.resizable = true;
+    return w;
+  }
+  if (family === "accessoryInline") {
+    w.addText(S ? `🐱 ฿${compact(S.total)} ${S.dayPct >= 0 ? "▲" : "▼"}${Math.abs(S.dayPct).toFixed(2)}% · ${hm(S.at)}` : "🐱 เพิ่มพอร์ตก่อนนะ");
+    return w;
+  }
+  if (!S || S.rows.length === 0) return emptyWidget(w, settings);
+
+  // ----- SMALL -----
+  if (family === "small") {
+    w.setPadding(9, 9, 8, 9);
+    const sc = panel(w, { pad: [0, 0, 0, 0], radius: 3, bg: T.panel });
+    const si = sc.addImage(sceneImage(S, act, settings, 140, 58)); si.imageSize = new Size(140, 58);
+    w.addSpacer(5);
+    lcd(w, S, 142, 2.3);
+    w.addSpacer();
+    const mk = w.addStack(); mk.layoutHorizontally(); mk.centerAlignContent();
+    for (const [flag, st] of [["🇹🇭", act.M.th], ["🇺🇸", act.M.us]]) {
+      txt(mk, "●", 8, { color: st.open ? T.up : T.sub, w: "heavy" }); txt(mk, flag + (st.open ? "เปิด " : "ปิด "), 8, { w: "semi" });
+    }
+    mk.addSpacer();
+    txt(mk, "⟳" + hm(S.at), 8, { color: T.sub, w: "medium" });
+    return w;
+  }
+
+  // ----- MEDIUM -----
+  if (family === "medium") {
+    w.setPadding(10, 10, 9, 11);
+    const row = w.addStack(); row.layoutHorizontally();
+    const left = row.addStack(); left.layoutVertically(); left.size = new Size(152, 0);
+    const sc = panel(left, { pad: [0, 0, 0, 0], radius: 3 });
+    const si = sc.addImage(sceneImage(S, act, settings, 148, 104)); si.imageSize = new Size(148, 104);
+    left.addSpacer(4);
+    txt(left, "🐾 " + line, 9, { w: "semi", lines: 2, scale: 0.6 });
+    row.addSpacer(9);
+    const right = row.addStack(); right.layoutVertically();
+    lcd(right, S, 172, 2.3);
+    right.addSpacer(5);
+    marketRow(right, act, 8.5, true);
+    right.addSpacer(5);
+    const bar = right.addImage(catBar(S, 14, 344, 18)); bar.imageSize = new Size(172, 9);
+    right.addSpacer(3);
+    const shown = CAT_ORDER.filter((c) => S.cats[c].value > 0);
+    for (let i = 0; i < shown.length; i += 2) {
+      const lr = right.addStack(); lr.layoutHorizontally(); lr.centerAlignContent();
+      shown.slice(i, i + 2).forEach((c) => {
+        const cell = lr.addStack(); cell.layoutHorizontally(); cell.centerAlignContent(); cell.size = new Size(86, 11);
+        pixDot(cell, CATS[c].color, 6); cell.addSpacer(3);
+        txt(cell, `${CATS[c].short} ${S.cats[c].share.toFixed(0)}%`, 8.5, { w: "semi" });
+        cell.addSpacer();
+      });
+    }
+    right.addSpacer();
+    refreshLine(right, S, 8);
+    return w;
+  }
+
+  // ----- LARGE / EXTRA LARGE -----
+  w.setPadding(11, 12, 9, 12);
+  const sc = panel(w, { pad: [0, 0, 0, 0], radius: 3 });
+  const si = sc.addImage(sceneImage(S, act, settings, 334, 90)); si.imageSize = new Size(334, 90);
+  w.addSpacer(5);
+  const nm = w.addStack(); nm.layoutHorizontally(); nm.centerAlignContent();
+  txt(nm, "♥ " + settings.catName, 11, { w: "heavy" });
+  nm.addSpacer(6);
+  txt(nm, line, 10, { w: "semi", color: T.sub, scale: 0.6 });
+  nm.addSpacer();
+  w.addSpacer(4);
+  const mid = w.addStack(); mid.layoutHorizontally(); mid.centerAlignContent();
+  const leftCol = mid.addStack(); leftCol.layoutVertically();
+  lcd(leftCol, S, 200, 2.8);
+  leftCol.addSpacer(5);
+  marketRow(leftCol, act, 9);
+  mid.addSpacer();
+  const dn = mid.addImage(pixelDonut(S)); dn.imageSize = new Size(104, 104);
+  w.addSpacer(6);
+
+  const tb = panel(w, { pad: [4, 8, 4, 8] });
+  const shownL = CAT_ORDER.filter((c) => S.cats[c].value > 0);
+  for (let i = 0; i < shownL.length; i += 2) {
+    const r = tb.addStack(); r.layoutHorizontally(); r.centerAlignContent();
+    shownL.slice(i, i + 2).forEach((c, j) => {
+      const x = S.cats[c];
+      const cell = r.addStack(); cell.layoutHorizontally(); cell.centerAlignContent(); cell.size = new Size(150, 14);
+      pixDot(cell, CATS[c].color, 7); cell.addSpacer(4);
+      txt(cell, `${CATS[c].name} ${x.share.toFixed(0)}%`, 10, { w: "bold" });
+      cell.addSpacer();
+      txt(cell, pctStr(x.plPct), 10, { color: plColor(x.pl), w: "heavy" });
+      if (j === 0) r.addSpacer(8);
+    });
+    tb.addSpacer(1);
+  }
+  w.addSpacer(5);
+
+  if (settings.goal > 0) {
+    const g = w.addStack(); g.layoutHorizontally(); g.centerAlignContent();
+    const prog = Math.max(0, Math.min(1, S.total / settings.goal));
+    txt(g, "EXP", 9, { w: "heavy", color: T.sub, mono: true });
+    g.addSpacer(5);
+    const eb = g.addImage(blockBar([{ count: Math.round(prog * 20), color: "#FFD84A" }], 20, 380, 20)); eb.imageSize = new Size(190, 9);
+    g.addSpacer(5);
+    txt(g, `${(prog * 100).toFixed(0)}% ของ ${compact(settings.goal)}`, 8.5, { color: T.sub, w: "semi" });
+    w.addSpacer(4);
+  }
+  const hh = w.addStack(); hh.layoutHorizontally();
+  const n30 = Math.min(30, hist.length);
+  txt(hh, n30 >= 2 ? `มูลค่าพอร์ต ${n30} วัน` : "กราฟประวัติ (เริ่มแสดงวันที่ 2)", 8.5, { color: T.sub, w: "semi" });
+  hh.addSpacer();
+  if (S.best) txt(hh, `▲${S.best.type === "gold" ? "ทอง" : S.best.symbol} ${pctStr(S.best.dayPct)}`, 8.5, { color: T.up, w: "bold" });
+  if (S.best && S.worst) hh.addSpacer(6);
+  if (S.worst) txt(hh, `▼${S.worst.type === "gold" ? "ทอง" : S.worst.symbol} ${pctStr(S.worst.dayPct)}`, 8.5, { color: T.down, w: "bold" });
+  w.addSpacer(2);
+  const hb = w.addImage(historyBars(hist, 668, 48, T.hex.up, T.hex.down)); hb.imageSize = new Size(334, 24); hb.resizable = true;
+  w.addSpacer();
+  refreshLine(w, S, 8.5, true);
+  return w;
+}
+
+// ---------- แอนิเมชันห้องแมว (ใช้ในแอป: ขยับได้จริง) ----------
+function animPayload(S, act, settings) {
+  const pool = PLAY[act.mood] || PLAY.normal;
+  const base = act.a;
+  let seq;
+  if (base === "watchTH" || base === "watchUS") seq = [[base, 14], ["stretch", 4], [base, 12], ["groom", 5], ["walk", 12], [base, 10]];
+  else if (base === "sleep") seq = [["sleep", 24], ["stretch", 4], ["sleep", 20], ["loaf", 6]];
+  else if (base === "eat") seq = [["eat", 10], ["groom", 6], ["loaf", 6], ["walk", 10]];
+  else if (base === "ready") seq = [["ready", 8], ["stretch", 5], ["walk", 10], ["ready", 8]];
+  else seq = [[base, 12]].concat([...new Set(pool.concat(["walk", "watchFly", "groom", "loaf", "butterfly", "yarn"]))].filter((x) => x !== base).map((x) => [x, x === "zoomies" ? 6 : 10]));
+  const lines = {};
+  for (const [a] of seq.concat([["zoomies"], ["butterfly"]])) lines[a] = actLine(S, Object.assign({}, act, { a }));
+  const dot = (st) => (st.open ? "#3CCB6B" : st.state === "pre" || st.state === "break" || st.state === "after" ? "#E8A33A" : "#8A8A8A");
+  return {
+    seq, lines, mood: act.mood, sleepy: act.sleepy, cat: settings.catColor, hour: act.M.bkk.min / 60, seed: act.seed % 97,
+    thUp: S ? S.cats.thai.day >= 0 : true, usUp: S ? S.cats.us.day + S.cats.fund.day >= 0 : true,
+    mk: [{ n: "🇹🇭 SET", l: act.M.th.label, c: dot(act.M.th) }, { n: "🇺🇸 US", l: act.M.us.label, c: dot(act.M.us) }],
+  };
+}
+function animJS() {
+  return `const ENGINE=(${makeCatEngine.toString()})(D.spr);
+function startScene(cv,cw,ch,A,onLine){
+  const px=6,ctx=cv.getContext('2d');cv.width=cw*px;cv.height=ch*px;ctx.imageSmoothingEnabled=false;
+  const P=(x,y,w,h,c,a)=>{if(w<=0||h<=0)return;ctx.globalAlpha=a==null?1:a;ctx.fillStyle=c;ctx.fillRect(Math.round(x*px),Math.round(y*px),w*px,h*px);ctx.globalAlpha=1};
+  const PER={walk:16,yarn:12,butterfly:10,zoomies:5};const FT={walk:.9,run:.45,yarn:.9,butterfly:.45,zoomies:.4,pounce:1.6,eat:1.2,sleep:4,loaf:4,groom:2,stretch:3,watchFly:3};
+  let idx=0,t0=performance.now(),tap=null,lastLine='';
+  cv.addEventListener('click',()=>{tap={a:Math.random()<.5?'zoomies':'butterfly',until:performance.now()+6000,t0:performance.now()}});
+  function frame(){
+    const now=performance.now();let a,el;
+    if(tap&&now<tap.until){a=tap.a;el=(now-tap.t0)/1000}else{tap=null;let cur=A.seq[idx];el=(now-t0)/1000;if(el>cur[1]){idx=(idx+1)%A.seq.length;t0=now;el=0}a=A.seq[idx][0]}
+    const per=PER[a]||4,t=(el%per)/per,ft=((now/1000)%(FT[a]||2))/(FT[a]||2);
+    ctx.clearRect(0,0,cv.width,cv.height);
+    ENGINE.renderScene(P,{w:cw,h:ch,activity:a,mood:tap?'happy':A.mood,sleepy:A.sleepy,t,ft,seed:A.seed,hour:A.hour,catColor:A.cat,chartUp:a==='watchUS'?A.usUp:A.thUp,catX:Math.round((cw-34)*.35)});
+    const ln=tap?'เมี้ยว! เล่นด้วยกัน~':(A.lines[a]||'');if(ln!==lastLine&&onLine){lastLine=ln;onLine(ln)}
+  }
+  frame();setInterval(frame,90);
+}`;
+}
+function roomHTML(S, hist, settings) {
+  const act = catActivity(S, settings);
+  const D = { spr: SPR, name: settings.catName, anim: animPayload(S, act, settings), total: S ? S.total : 0, pl: S ? S.pl : 0, plPct: S ? S.plPct : 0, day: S ? S.dayPct : 0, theme: settings.theme };
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F4E9D2;--card:#FFF8E8;--ink:#3B2418;--text:#3B2418;--sub:#8A6E57}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#1D1A2F;--card:#2A2542;--ink:#0B0816;--text:#F3EAD7;--sub:#A79CC8}}
+:root[data-theme=dark]{--bg:#1D1A2F;--card:#2A2542;--ink:#0B0816;--text:#F3EAD7;--sub:#A79CC8}
+body{margin:0;padding:14px;background:var(--bg);color:var(--text);font:15px 'IBM Plex Sans Thai',-apple-system,sans-serif}
+.card{background:var(--card);border:3px solid var(--ink);box-shadow:4px 4px 0 var(--ink);padding:12px;margin-bottom:14px}
+canvas{display:block;width:100%;image-rendering:pixelated;border:3px solid var(--ink)}
+h1{font:700 18px 'Pixelify Sans','IBM Plex Sans Thai',sans-serif;margin:0 0 10px}
+.say{background:var(--card);border:3px solid var(--ink);padding:10px 12px;margin-top:10px;font-weight:600;min-height:22px}
+.mk{display:flex;flex-direction:column;gap:6px;font-size:14px}.dot{display:inline-block;width:10px;height:10px;border:2px solid var(--ink);margin-right:6px}
+.sub{color:var(--sub);font-size:12.5px;margin-top:8px}.big{font:700 24px 'Pixelify Sans',monospace}
+</style></head><body>
+<div class="card"><h1>■ ห้องของ <span id="nm"></span></h1><canvas id="room"></canvas><div class="say" id="say"></div><div class="sub">แตะที่ห้องเพื่อเล่นกับแมว 🐾</div></div>
+<div class="card"><div class="big" id="tot"></div><div id="pl" style="margin:4px 0 10px;font-weight:600"></div><div class="mk" id="mk"></div></div>
+<script>
+const D=${JSON.stringify(D)};
+if(D.theme!=='auto')document.documentElement.dataset.theme=D.theme;
+const $=id=>document.getElementById(id);
+${animJS()}
+$('nm').textContent=D.name;
+$('tot').textContent='฿'+Math.round(D.total).toLocaleString('en-US');
+$('pl').textContent=(D.pl>=0?'+':'')+Math.round(D.pl).toLocaleString('en-US')+' ('+(D.plPct>=0?'+':'')+D.plPct.toFixed(2)+'%) · วันนี้ '+(D.day>=0?'+':'')+D.day.toFixed(2)+'%';
+$('mk').innerHTML=D.anim.mk.map(m=>'<div><span class="dot" style="background:'+m.c+'"></span><b>'+m.n+'</b> '+m.l+'</div>').join('');
+startScene($('room'),80,52,D.anim,(t)=>{$('say').textContent=t});
+</script></body></html>`;
+}
+
+// ---------- หน้าดูพอร์ตในแอป (สไตล์พิกเซล) ----------
+function reportHTML(S, hist, settings) {
+  const act = catActivity(S, settings);
+  const mood = faceMood(act);
+  const usV = S.cats.us.value, fdV = S.cats.fund.value, usShare = usV + fdV > 0 ? usV / (usV + fdV) : 0;
+  hist = hist.map((h) => {
+    const c = Object.assign({}, h.cats || {});
+    if (c.foreign != null && c.us == null && c.fund == null) { c.us = Math.round(c.foreign * usShare); c.fund = c.foreign - c.us; }
+    return Object.assign({}, h, { cats: c });
+  });
+  const fundInfo = settings.fundInfo || {};
+  const payload = {
+    spr: SPR, mood, line: actLine(S, act), cat: settings.catColor, anim: animPayload(S, act, settings), name: settings.catName, age: catAgeDays(hist),
+    goal: settings.goal, theme: settings.theme,
+    cats: CAT_ORDER.map((c) => ({ id: c, name: CATS[c].name, color: CATS[c].color, ...S.cats[c] })),
+    rows: S.rows.map((r) => ({
+      cat: r.cat, color: CATS[r.cat].color, type: r.type, sym: r.type === "gold" ? "ทองคำแท่ง 96.5%" : r.symbol,
+      unit: TYPES[r.type].unit, qty: r.qty, avg: r.avg, price: r.price, native: r.native, value: r.value, cost: r.cost,
+      pl: r.pl, plPct: r.plPct, day: r.day, dayPct: r.dayPct, date: r.firstDate, noCost: r.noCost, bk: !!r.fromBitkub, missing: r.missingPrice,
+      region: r.type === "fund" ? (fundInfo[r.symbol] ? REGION[fundInfo[r.symbol].region] || "" : guessRegion(r.symbol) ? REGION.foreign + "?" : "") : "",
+    })),
+    hist, total: S.total, cost: S.cost, pl: S.pl, plPct: S.plPct, day: S.day, dayPct: S.dayPct,
+    fx: S.usdthb, at: thDate(S.at) + " " + hm(S.at), stale: S.stale, errors: S.errors,
+  };
+  const ANIM_JS = animJS();
+  return `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#F4E9D2;--card:#FFF8E8;--ink:#3B2418;--text:#3B2418;--sub:#8A6E57;--up:#23994A;--down:#D93A45;--bubble:#fff;--grid:rgba(59,36,24,.12)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#1D1A2F;--card:#2A2542;--ink:#0B0816;--text:#F3EAD7;--sub:#A79CC8;--up:#5BE38A;--down:#FF6B7A;--bubble:#352F55;--grid:rgba(255,255,255,.08)}}
+:root[data-theme=dark]{--bg:#1D1A2F;--card:#2A2542;--ink:#0B0816;--text:#F3EAD7;--sub:#A79CC8;--up:#5BE38A;--down:#FF6B7A;--bubble:#352F55;--grid:rgba(255,255,255,.08)}
+*{box-sizing:border-box}
+body{margin:0;padding:16px 16px 48px;background:var(--bg);color:var(--text);font:15px 'IBM Plex Sans Thai',-apple-system,sans-serif;font-variant-numeric:tabular-nums;
+background-image:radial-gradient(var(--grid) 1px,transparent 1px);background-size:8px 8px}
+.card{background:var(--card);border:3px solid var(--ink);box-shadow:4px 4px 0 var(--ink);padding:14px;margin-bottom:16px}
+h2{font:700 16px 'Pixelify Sans','IBM Plex Sans Thai',sans-serif;margin:0 0 12px;letter-spacing:.5px}
+.hero{display:flex;gap:12px;align-items:flex-end}
+.scene{display:block;width:100%;image-rendering:pixelated;border:3px solid var(--ink);margin-bottom:10px;touch-action:manipulation}
+.mk{display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px;margin-top:8px}.mk b{font-weight:600}.dot{display:inline-block;width:9px;height:9px;border:2px solid var(--ink);margin-right:5px;vertical-align:-1px}
+.say{position:relative;background:var(--bubble);border:3px solid var(--ink);padding:10px 12px;font-size:15px;line-height:1.35;margin-bottom:6px}
+.say:after{content:"▼";position:absolute;right:8px;bottom:-2px;font-size:9px;color:var(--sub)}
+.say:before{content:"";position:absolute;left:-11px;bottom:12px;border:8px solid transparent;border-right-color:var(--ink)}
+.name{font-weight:700;font-size:14px}.sub{color:var(--sub);font-size:12px}
+.lcd{background:#221E38;border:3px solid #0B0816;padding:12px;color:#FFE38A;margin-top:12px}
+.lcd .lab{font:700 11px 'Pixelify Sans',monospace;color:#8E84C6;display:flex;justify-content:space-between}
+.lcd .big{font:700 34px 'Pixelify Sans',monospace;text-shadow:3px 3px 0 #6B4E1A;margin:4px 0 2px;letter-spacing:1px}
+.lcd .pl{font:600 16px 'IBM Plex Sans Thai',sans-serif;font-variant-numeric:tabular-nums}
+.up{color:var(--up)}.down{color:var(--down)}.lcd .up{color:#6BF08F}.lcd .down{color:#FF7A85}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.k{border:2px solid var(--ink);padding:8px;background:var(--bg)}.k b{display:block;font-size:16px;margin-top:2px}
+.dn{display:flex;gap:14px;align-items:center}
+.dn canvas{image-rendering:pixelated;width:150px;height:150px;flex:none}
+.leg{flex:1}.li{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:2px dashed var(--grid);font-size:14px}
+.li:last-child{border:0}
+.sq{width:11px;height:11px;border:2px solid var(--ink);display:inline-block;margin-right:6px;vertical-align:-1px}
+.bar{display:flex;gap:3px;margin:12px 0 4px}.bar i{flex:1;height:14px;border:2px solid var(--ink)}
+.row{padding:10px 0;border-top:2px dashed var(--grid)}.row:first-child{border-top:0}
+.r1{display:flex;justify-content:space-between;font-weight:700}.r2{display:flex;justify-content:space-between;font-size:13px;color:var(--sub);margin-top:3px;gap:8px}
+.tag{font-size:11px;font-weight:500;padding:0 5px;border:2px solid var(--ink);margin-left:6px;color:var(--sub);white-space:nowrap}
+.exp{display:flex;gap:3px;margin-top:8px}.exp i{flex:1;height:14px;border:2px solid var(--ink);background:transparent}.exp i.on{background:#FFD84A}
+canvas.ch{width:100%!important}
+</style></head><body>
+<div class="card">
+ <canvas class="scene" id="scene"></canvas>
+ <div><div class="name" id="nm"></div><div class="sub" id="age"></div><div class="say" id="say"></div><div class="mk" id="mk"></div></div>
+ <div class="lcd"><div class="lab"><span>TOTAL · THB</span><span id="at"></span></div><div class="big" id="total"></div><div class="pl" id="pl"></div></div>
+ <div class="grid"><div class="k"><span class="sub">ต้นทุนรวม</span><b id="cost"></b></div><div class="k"><span class="sub">วันนี้</span><b id="day"></b></div></div>
+ <div id="goal"></div>
+ <div class="sub" id="note" style="margin-top:10px"></div>
+</div>
+<div class="card"><h2>■ สัดส่วนพอร์ต</h2><div class="dn"><canvas id="donut" width="156" height="156"></canvas><div class="leg" id="legend"></div></div><div class="bar" id="bar"></div></div>
+<div class="card"><h2>■ ต้นทุน vs มูลค่า</h2><canvas class="ch" id="bars" height="230"></canvas></div>
+<div class="card"><h2>■ มูลค่าพอร์ตย้อนหลัง</h2><canvas class="ch" id="line" height="230"></canvas><div class="sub" id="histNote"></div></div>
+<div class="card"><h2>■ ช่องเก็บของ (สินทรัพย์)</h2><div id="rows"></div></div>
+<script>
+const D=${JSON.stringify(payload)};
+if(D.theme!=='auto')document.documentElement.dataset.theme=D.theme;
+const $=id=>document.getElementById(id);
+const f=(n,d=0)=>isFinite(n)?Number(n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}):'-';
+const s=(n,d=0)=>(n>0?'+':'')+f(n,d);const p=n=>isFinite(n)?(n>0?'+':'')+n.toFixed(2)+'%':'-';
+const cl=n=>n>=0?'up':'down';const fp=x=>{const a=Math.abs(x);return f(x,a>=1000?0:a>=1?2:a>=.01?4:8)};
+function shade(h,k){const n=parseInt(h.slice(1),16);return '#'+[n>>16&255,n>>8&255,n&255].map(v=>Math.max(0,Math.min(255,Math.round(k<0?v*(1+k):v+(255-v)*k))).toString(16).padStart(2,'0')).join('')}
+${ANIM_JS}
+startScene($('scene'),100,50,D.anim,(t)=>{$('say').textContent=t});
+$('mk').innerHTML=D.anim.mk.map(m=>'<span><span class="dot" style="background:'+m.c+'"></span><b>'+m.n+'</b> '+m.l+'</span>').join('');$('nm').textContent='♥ '+D.name;$('age').textContent='เลี้ยงมา '+D.age+' วัน';$('say').textContent=D.line;
+$('at').textContent='⟳ '+D.at;$('total').textContent='฿'+f(D.total);
+$('pl').innerHTML='<span class="'+cl(D.pl)+'">'+s(D.pl)+' ('+p(D.plPct)+')</span>';
+$('cost').textContent='฿'+f(D.cost);$('day').innerHTML='<span class="'+cl(D.day)+'">'+s(D.day)+' ('+p(D.dayPct)+')</span>';
+if(D.goal>0){const pr=Math.max(0,Math.min(1,D.total/D.goal)),on=Math.round(pr*20);
+$('goal').innerHTML='<div class="sub" style="margin-top:12px">EXP เป้าหมาย ฿'+f(D.goal)+' · '+(pr*100).toFixed(1)+'%</div><div class="exp">'+Array.from({length:20},(_,i)=>'<i class="'+(i<on?'on':'')+'"></i>').join('')+'</div>'}
+$('note').textContent=(isFinite(D.fx)?'USD/THB '+D.fx.toFixed(2)+' · ':'')+'ทองคิดที่ราคารับซื้อฮั่วเซ่งเฮง'+(D.stale?' · ⚠︎ บางรายการใช้ราคาเก่า':'')+(D.errors.length?' · ดึงไม่ได้: '+D.errors.join(', '):'');
+const C=D.cats.filter(c=>c.value>0);
+// โดนัทพิกเซล
+(function(){const N=26,px=6,cx=$('donut').getContext('2d'),tot=C.reduce((a,c)=>a+c.value,0)||1;let acc=0;const b=C.map(c=>({end:(acc+=c.value/tot),color:c.color}));
+const R=N/2-.4,r=N/2-8.2;for(let y=0;y<N;y++)for(let x=0;x<N;x++){const dx=x+.5-N/2,dy=y+.5-N/2,d=Math.hypot(dx,dy);if(d>R||d<r)continue;let col;
+if(d>R-1.15||d<r+1.15)col='#2B1A12';else{const a=((Math.atan2(dx,-dy)+Math.PI*2)%(Math.PI*2))/(Math.PI*2);col=(b.find(q=>a<=q.end)||b[b.length-1]).color;if(d>R-2.2)col=shade(col,.25);else if(d<r+2.2)col=shade(col,-.22)}
+cx.fillStyle=col;cx.fillRect(x*px,y*px,px,px)}})();
+$('legend').innerHTML=C.map(c=>'<div class="li"><span><span class="sq" style="background:'+c.color+'"></span>'+c.name+'<br><span class="sub">'+c.share.toFixed(1)+'%</span></span><span style="text-align:right">฿'+f(c.value)+'<br><span class="'+cl(c.pl)+'" style="font-size:12px">'+p(c.plPct)+'</span></span></div>').join('');
+(function(){const n=24,tot=C.reduce((a,c)=>a+c.value,0),raw=C.map(c=>c.value/tot*n),o=raw.map(Math.floor);let l=n-o.reduce((a,b)=>a+b,0);raw.map((x,i)=>[x-Math.floor(x),i]).sort((a,b)=>b[0]-a[0]).forEach(([,i])=>{if(l>0){o[i]++;l--}});
+$('bar').innerHTML=C.map((c,i)=>Array.from({length:o[i]},()=>'<i style="background:'+c.color+';box-shadow:inset 0 -4px 0 '+shade(c.color,-.3)+'"></i>').join('')).join('')})();
+$('rows').innerHTML=D.rows.map(r=>'<div class="row"><div class="r1"><span><span class="sq" style="background:'+r.color+'"></span>'+r.sym+(r.bk?'<span class="tag">Bitkub</span>':'')+(r.region?'<span class="tag">'+r.region+'</span>':'')+(r.missing?'<span class="tag">ไม่มีราคา</span>':'')+'</span><span>฿'+f(r.value)+'</span></div>'+
+'<div class="r2"><span>'+f(r.qty,r.type==='crypto'?8:4).replace(/(\\.\\d*?)0+$/,'$1').replace(/\\.$/,'')+' '+r.unit+' · เฉลี่ย ฿'+fp(r.avg)+' · ล่าสุด ฿'+fp(r.price)+(r.type==='us'&&isFinite(r.native)?' ($'+fp(r.native)+')':'')+'</span>'+
+'<span class="'+cl(r.pl)+'" style="white-space:nowrap">'+(r.noCost?'ไม่มีต้นทุน':s(r.pl)+' ('+p(r.plPct)+')')+'</span></div>'+
+'<div class="r2"><span>'+(r.date?'ซื้อครั้งแรก '+r.date:'')+'</span><span class="'+cl(r.day)+'">วันนี้ '+p(r.dayPct)+'</span></div></div>').join('');
+if(!window.Chart){document.querySelectorAll('canvas.ch').forEach(c=>c.closest('.card').remove())}else{
+const css=getComputedStyle(document.documentElement),sub=css.getPropertyValue('--sub').trim(),grid=css.getPropertyValue('--grid').trim(),ink=css.getPropertyValue('--ink').trim();
+Chart.defaults.color=sub;Chart.defaults.borderColor=grid;Chart.defaults.font.family="'IBM Plex Sans Thai',sans-serif";Chart.defaults.font.size=12;
+const kfmt=v=>v>=1e6?(v/1e6)+'M':v>=1e3?(v/1e3)+'K':v;
+new Chart($('bars'),{type:'bar',data:{labels:C.map(c=>c.name),datasets:[{label:'ต้นทุน',data:C.map(c=>c.cost),backgroundColor:'rgba(138,110,87,.35)',borderColor:ink,borderWidth:2,borderRadius:0},{label:'มูลค่า',data:C.map(c=>c.value),backgroundColor:C.map(c=>c.color),borderColor:ink,borderWidth:2,borderRadius:0}]},
+options:{plugins:{legend:{position:'bottom',labels:{boxWidth:12,useBorderRadius:false}}},scales:{y:{ticks:{callback:kfmt}},x:{grid:{display:false}}}}});
+if(D.hist.length>=2){new Chart($('line'),{type:'line',data:{labels:D.hist.map(h=>h.d.slice(5)),datasets:[
+...C.map(c=>({label:c.name,data:D.hist.map(h=>(h.cats||{})[c.id]||0),backgroundColor:c.color+'AA',borderColor:c.color,fill:true,stack:'s',pointRadius:0,borderWidth:2,stepped:true})),
+{label:'ต้นทุน',data:D.hist.map(h=>h.c),borderColor:sub,borderDash:[6,4],pointRadius:0,borderWidth:2,fill:false,stack:'c',stepped:true}]},
+options:{interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{boxWidth:12}}},scales:{y:{stacked:true,ticks:{callback:kfmt}}}}})}
+else{$('line').remove();$('histNote').textContent='แมวจะจดมูลค่าพอร์ตวันละ 1 ครั้งทุกครั้งที่ widget รีเฟรช กราฟจะเริ่มแสดงเมื่อมีข้อมูลตั้งแต่ 2 วันขึ้นไป'}}
+</script></body></html>`;
+}
+
+// ---------- นำเข้าจากรูปด้วย AI ----------
+const AI_PROMPT = `คุณคือผู้ช่วยอ่านภาพหน้าจอพอร์ตการลงทุน (เช่น แอป Dime, Bitkub, แอปหุ้น, แอปทอง)
+อ่าน "ทุกรูป" ที่แนบมา แล้วสรุปสินทรัพย์ที่ถืออยู่ทุกตัว
+ตอบกลับเป็น JSON อย่างเดียว ในโค้ดบล็อกเดียว ห้ามมีคำอธิบายอื่น รูปแบบนี้:
+
+{"portfolio_import":1,"items":[
+ {"type":"thai","symbol":"PTT","qty":500,"avg":32.75,"currency":"THB","date":null,"nav":null,"region":null},
+ {"type":"fund","symbol":"KKP US500-UH-E","qty":10263.9308,"avg":11.69,"currency":"THB","date":null,"nav":13.94,"region":"foreign"}
+]}
+
+กติกา:
+- type (จัดหมวดตาม "สิ่งที่ถือจริง" อย่างเคร่งครัด):
+  "thai" = หุ้นสามัญที่จดทะเบียนใน SET/mai เท่านั้น
+  "us" = หุ้นหรือ ETF ที่ซื้อตรงในตลาดต่างประเทศ ราคาและต้นทุนเป็น USD (เช่น หมวดหุ้นอเมริกาใน Dime: VOO, AAPL)
+  "fund" = กองทุนรวมที่จดทะเบียนในไทยทุกกอง (ซื้อเป็น "หน่วย" มี NAV เป็นบาท) รวมถึงกองที่ไปลงทุนหุ้นต่างประเทศ/Feeder Fund/กองดัชนี S&P500 เช่น KKP US500-UH-E, K-USA-A(A), SCBS&P500 → ห้ามใส่เป็น "us"
+  "crypto" = คริปโต | "gold" = ทองคำ
+- region: เฉพาะ type "fund" ใส่ "foreign" ถ้ากองนั้นลงทุนต่างประเทศ (Feeder/FIF/ชื่อมี US, GLOBAL, CHINA, S&P, NASDAQ ฯลฯ) "thai" ถ้าลงทุนหุ้นไทย "mixed" ถ้าผสม ไม่แน่ใจใส่ null
+- symbol: ชื่อย่อตามที่แสดงในแอป หุ้นไทยไม่ต้องมี .BK / คริปโตใช้ชื่อเหรียญ เช่น BTC / กองทุนใช้ชื่อย่อเต็มตรงตามแอป รวมเว้นวรรคและคลาส เช่น KKP US500-UH-E / ทองใช้ "HSH"
+- qty: จำนวนที่ถือ (หุ้น / หน่วย / เหรียญ) ทองให้เป็น "บาททอง" ถ้าภาพเป็นกรัมให้หารด้วย 15.244
+- avg: ต้นทุนเฉลี่ยต่อ 1 หุ้น/หน่วย/เหรียญ/บาททอง ถ้าภาพมีแต่ต้นทุนรวม ให้ใช้ ต้นทุนรวม ÷ qty
+- currency: สกุลเงินของ avg คือ "USD" หรือ "THB"
+- date: วันที่ซื้อแบบ YYYY-MM-DD ถ้าไม่เห็นในภาพให้ใส่ null
+- nav: เฉพาะกองทุน ใส่ราคา NAV ล่าสุดต่อหน่วยที่เห็นในภาพ ถ้าไม่มีให้ใส่ null
+- ตัวเดียวกันที่ปรากฏหลายรูปให้รวมเป็นรายการเดียว
+- ตัวเลขต้องเป็น number ไม่มีคอมมา อ่านให้ตรงภาพทุกหลัก ห้ามเดา อ่านไม่ออกให้ใส่ null
+- ไม่ต้องใส่เงินสดหรือยอดคงเหลือที่ไม่ใช่สินทรัพย์`;
+
+const TYPE_ALIAS = {
+  thai: "thai", th: "thai", set: "thai", mai: "thai", thai_stock: "thai", stock_th: "thai", "หุ้นไทย": "thai",
+  us: "us", usa: "us", us_stock: "us", stock_us: "us", etf: "us", foreign_stock: "us", "หุ้นต่างประเทศ": "us",
+  fund: "fund", mutual_fund: "fund", mf: "fund", "กองทุน": "fund",
+  crypto: "crypto", coin: "crypto", "คริปโต": "crypto",
+  gold: "gold", "ทอง": "gold", "ทองคำ": "gold",
+};
+function parseAI(text) {
+  let t = String(text || "").replace(/```(?:json)?/gi, "").trim();
+  let j = null;
+  try { j = JSON.parse(t); } catch (e) {
+    const a = t.indexOf("{"), b = t.lastIndexOf("}"), c = t.indexOf("["), d = t.lastIndexOf("]");
+    for (const [x, y] of [[a, b], [c, d]]) {
+      if (j || x < 0 || y <= x) continue;
+      try { j = JSON.parse(t.slice(x, y + 1)); } catch (e2) {}
+    }
+  }
+  if (!j) throw new Error("อ่าน JSON ไม่ได้");
+  const items = Array.isArray(j) ? j : j.items || j.holdings || j.assets;
+  if (!Array.isArray(items) || !items.length) throw new Error("ไม่พบรายการสินทรัพย์");
+  return items.map((it) => {
+    const type = TYPE_ALIAS[String(it.type || "").toLowerCase().trim()] || null;
+    let sym = String(it.symbol || it.name || "").toUpperCase().trim().replace(/\.BK$/, "");
+    if (type === "crypto") sym = sym.replace(/[_/-]?THB$/, "");
+    if (type === "gold") sym = "HSH";
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(it.date || "")) ? it.date : null;
+    let fixedType = type;
+    const cur = String(it.currency || "").toUpperCase();
+    // เข้มงวด: "หุ้นต่างประเทศ" ที่ต้นทุนเป็นบาท หรือชื่อแบบกองทุนไทย / มี NAV → เป็นกองทุนรวม
+    if (type === "us" && (looksLikeThaiFund(sym) || (cur === "THB" && isFinite(num(it.nav))))) fixedType = "fund";
+    const region = ["foreign", "thai", "mixed"].includes(it.region) ? it.region : null;
+    const out = { type: fixedType, symbol: sym, qty: num(it.qty), avg: num(it.avg), currency: cur, date, nav: num(it.nav), region, moved: fixedType !== type };
+    out.ok = !!type && !!sym && out.qty > 0 && out.avg >= 0;
+    return out;
+  });
+}
+async function aiImportFlow(data) {
+  const i = await ask("📸 นำเข้าจากรูปด้วย AI",
+    "1) คัดลอก Prompt\n2) เปิด ChatGPT / Claude / Gemini วาง Prompt + แนบรูปแคปพอร์ตกี่รูปก็ได้\n3) คัดลอกคำตอบของ AI แล้วกลับมากดข้อ 2",
+    ["1) คัดลอก Prompt สำหรับ AI", "2) วางผลลัพธ์จาก AI แล้วเพิ่มเข้าพอร์ต"]);
+  if (i === 0) {
+    Pasteboard.copy(AI_PROMPT);
+    return info("คัดลอก Prompt แล้ว", "ไปวางในแอป AI พร้อมแนบรูปหน้าพอร์ต (Dime, Bitkub, ทอง ฯลฯ) จากนั้นคัดลอกคำตอบแล้วกลับมาเลือกข้อ 2");
+  }
+  if (i !== 1) return;
+  let items;
+  try { items = parseAI(Pasteboard.paste()); }
+  catch (e) { return info("อ่านผลลัพธ์ไม่ได้", `${e.message}\nให้คัดลอกคำตอบของ AI ทั้งก้อน (ส่วนที่เป็น JSON) แล้วลองใหม่`); }
+
+  // หุ้นต่างประเทศที่ AI ให้ต้นทุนเป็นบาท → แปลงเป็น USD ด้วยเรทปัจจุบัน
+  if (items.some((x) => x.type === "us" && x.currency === "THB")) {
+    let fx = NaN;
+    try { fx = (await yahoo("THB=X")).price; } catch (e) {}
+    for (const x of items) if (x.type === "us" && x.currency === "THB") {
+      if (isFinite(fx)) { x.avg = x.avg / fx; x.fx = fx; } else x.ok = false;
+    }
+  }
+  const good = items.filter((x) => x.ok), bad = items.filter((x) => !x.ok);
+  const lineOf = (x) => `${x.ok ? "•" : "⚠︎"} ${x.type ? CATS[TYPES[x.type].cat].name : "?"}${x.moved ? "(แก้หมวดให้)" : ""}${x.region ? "·" + REGION[x.region] : ""} ${x.symbol || "?"} · ${isFinite(x.qty) ? fmt(x.qty, 6).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "") : "?"} @ ${isFinite(x.avg) ? fmtPrice(x.avg) + (x.type === "us" ? " USD" : "") : "?"}`;
+  const preview = items.map(lineOf).join("\n") + (bad.length ? `\n\n⚠︎ ${bad.length} รายการข้อมูลไม่ครบ จะให้แก้ทีละรายการ` : "");
+  const m = await ask(`พบ ${items.length} รายการ`, preview, [
+    "อัปเดตทับตัวเดิม (แนะนำ: รูปคือยอดถือปัจจุบัน)",
+    "เพิ่มเป็นรายการซื้อใหม่ (เก็บของเดิมไว้)",
+  ]);
+  if (m < 0) return;
+  const replace = m === 0;
+  const r = await ask("ตรวจก่อนบันทึกไหม?", null, ["บันทึกทั้งหมดเลย", "ตรวจ/แก้ทีละรายการ"]);
+  if (r < 0) return;
+  if (data.sample) { data.holdings = []; data.navs = {}; delete data.sample; }
+
+  let added = 0, skipped = 0;
+  for (const x of items) {
+    let h = null;
+    if (x.type) {
+      const existing = data.holdings.filter((e) => e.type === x.type && e.symbol === x.symbol);
+      const date = x.date || existing.map((e) => e.date).sort()[0] || ymd();
+      h = { id: uid(), type: x.type, symbol: x.symbol, qty: x.qty, avg: x.avg, date };
+      if (x.fx) h.fx = x.fx;
+    }
+    if (!x.ok || r === 1) {
+      if (!x.type) {
+        const k = await ask(`"${x.symbol || "?"}" เป็นสินทรัพย์ประเภทไหน`, null, TYPE_ORDER.map((t) => TYPES[t].label), "ข้าม");
+        if (k < 0) { skipped++; continue; }
+        h = { id: uid(), type: TYPE_ORDER[k], symbol: x.symbol, qty: x.qty, avg: x.avg, date: x.date || ymd() };
+      }
+      const pre = Object.assign({}, h, { qty: isFinite(h.qty) ? h.qty : "", avg: isFinite(h.avg) ? h.avg : "" });
+      h = await holdingForm(h.type, pre);
+      if (!h) { skipped++; continue; }
+    }
+    if (replace) data.holdings = data.holdings.filter((e) => !(e.type === h.type && e.symbol === h.symbol));
+    data.holdings.push(h);
+    if (h.type === "fund" && x.region) { data.settings.fundInfo = data.settings.fundInfo || {}; data.settings.fundInfo[h.symbol] = { region: x.region }; }
+    if (h.type === "fund" && isFinite(x.nav) && x.nav > 0) {
+      const cur = data.navs[h.symbol];
+      data.navs[h.symbol] = { nav: x.nav, date: ymd(), prev: cur ? cur.nav : x.nav };
+    }
+    added++;
+  }
+  writeJSON(F_DATA, data);
+  const needNav = [...new Set(data.holdings.filter((h) => h.type === "fund" && !data.navs[h.symbol]).map((h) => h.symbol))];
+  await info("นำเข้าเสร็จแล้ว 🐱", `เพิ่ม ${added} รายการ${skipped ? ` · ข้าม ${skipped}` : ""}` + (needNav.length ? `\nกองทุนที่ยังไม่มี NAV: ${needNav.join(", ")} (อัปเดตได้ที่เมนู 📝)` : ""));
+}
+
+// ---------- เมนูในแอป ----------
+async function ask(title, message, actions, cancel = "ยกเลิก") {
+  const a = new Alert(); a.title = title; if (message) a.message = message;
+  actions.forEach((x) => a.addAction(x));
+  a.addCancelAction(cancel);
+  return await a.presentSheet();
+}
+async function info(title, message) {
+  const a = new Alert(); a.title = title; a.message = message || ""; a.addAction("ตกลง"); await a.presentAlert();
+}
+
+async function holdingForm(type, h) {
+  const Ty = TYPES[type];
+  const a = new Alert();
+  a.title = (h ? "แก้ไข: " : "เพิ่ม: ") + Ty.label;
+  a.message = type === "gold" ? "จำนวนเป็น \"บาททอง\" (เช่น 0.5 = 2 สลึง) ราคาเฉลี่ยต่อ 1 บาททอง"
+    : type === "us" ? "ราคาเฉลี่ยเป็น USD ต่อหุ้น (ตามที่แสดงใน Dime)"
+    : type === "fund" ? "ราคาเฉลี่ยเป็นบาทต่อหน่วย (ดูจาก Dime)"
+    : "ราคาเฉลี่ยเป็นบาทต่อ " + Ty.unit;
+  const fields = [];
+  if (type !== "gold") fields.push(["symbol", a.addTextField("สัญลักษณ์ " + Ty.ph, h ? h.symbol : "")]);
+  const q = a.addTextField("จำนวน (" + Ty.unit + ")", h ? String(h.qty) : ""); q.setDecimalPadKeyboard(); fields.push(["qty", q]);
+  const av = a.addTextField(type === "us" ? "ราคาเฉลี่ย (USD)" : "ราคาเฉลี่ย (บาท)", h ? String(h.avg) : ""); av.setDecimalPadKeyboard(); fields.push(["avg", av]);
+  fields.push(["date", a.addTextField("วันที่ซื้อ (ปปปป-ดด-วว ค.ศ.)", h ? h.date : ymd())]);
+  if (type === "us") { const fx = a.addTextField("เรท USD/THB ตอนซื้อ (เว้นว่าง = ใช้เรทปัจจุบัน)", h && h.fx ? String(h.fx) : ""); fx.setDecimalPadKeyboard(); fields.push(["fx", fx]); }
+  a.addAction("บันทึก"); a.addCancelAction("ยกเลิก");
+  if ((await a.presentAlert()) === -1) return null;
+  const v = {}; fields.forEach(([k], i) => (v[k] = a.textFieldValue(i).trim()));
+  let sym = type === "gold" ? "HSH" : v.symbol.toUpperCase().replace(/\.BK$/, "");
+  if (type === "crypto") sym = sym.replace(/_?THB$/, "");
+  const out = { id: h ? h.id : uid(), type, symbol: sym, qty: num(v.qty), avg: num(v.avg), date: v.date || ymd() };
+  if (type === "us" && isFinite(num(v.fx))) out.fx = num(v.fx);
+  if (!sym || !(out.qty > 0) || !(out.avg >= 0)) { await info("ข้อมูลไม่ครบ", "กรุณากรอกสัญลักษณ์ จำนวน และราคาเฉลี่ยเป็นตัวเลข"); return null; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(out.date)) { await info("รูปแบบวันที่ไม่ถูกต้อง", "ใช้รูปแบบ 2026-10-18 (ปี ค.ศ.)"); return null; }
+  return out;
+}
+
+async function regionFlow(data, sym) {
+  const keys = ["foreign", "thai", "mixed"];
+  const j = await ask(`"${sym}" ลงทุนที่ไหน?`, "ยังนับอยู่ในหมวด \"กองทุนรวม\" เหมือนเดิม แค่ใส่ป้ายบอกให้รู้", keys.map((k) => REGION[k]), "ข้าม");
+  if (j < 0) return;
+  data.settings.fundInfo = data.settings.fundInfo || {};
+  data.settings.fundInfo[sym] = { region: keys[j] };
+  writeJSON(F_DATA, data);
+}
+async function checkType(type, sym) {
+  // กันใส่ผิดหมวด: กองทุนไทยที่ไปใส่เป็นหุ้นต่างประเทศ
+  if (type === "us" && looksLikeThaiFund(sym)) {
+    const k = await ask(`"${sym}" ดูเหมือนกองทุนรวมไทย`, "กองทุนที่ซื้อผ่าน Dime/บลจ. แม้จะลงทุนหุ้นต่างประเทศ ให้นับเป็น \"กองทุนรวม\" (ราคาเป็นบาท/NAV) ไม่ใช่หุ้นต่างประเทศ", ["เปลี่ยนเป็นกองทุนรวม (แนะนำ)", "ยืนยันว่าเป็นหุ้นต่างประเทศ"]);
+    if (k === 0) return "fund";
+  }
+  return type;
+}
+
+async function addFlow(data) {
+  const i = await ask("เพิ่มรายการซื้อ", "ซื้อหลายครั้งให้เพิ่มทีละรายการ ระบบจะรวมเป็นราคาเฉลี่ยให้เอง", TYPE_ORDER.map((t) => TYPES[t].label));
+  if (i < 0) return;
+  let type = TYPE_ORDER[i];
+  let h = await holdingForm(type);
+  if (!h) return;
+  const fixed = await checkType(type, h.symbol);
+  if (fixed !== type) { type = fixed; h = await holdingForm(type, Object.assign({}, h, { type, fx: undefined })); if (!h) return; }
+  data.holdings.push(h);
+  writeJSON(F_DATA, data);
+  if (type === "fund" && !((data.settings.fundInfo || {})[h.symbol])) await regionFlow(data, h.symbol);
+  if (type === "fund" && !data.navs[h.symbol]) await navFlow(data, h.symbol);
+  if (type === "thai" || type === "us" || type === "crypto") {
+    try {
+      const P = await fetchPrices({ holdings: [h], navs: {} });
+      if (!P.prices[key(type, h.symbol)]) await info("หาราคาไม่เจอ", `ไม่พบราคา "${h.symbol}" ลองตรวจสัญลักษณ์อีกครั้ง (หุ้นไทยไม่ต้องใส่ .BK, คริปโตใส่แค่ BTC)`);
+    } catch (e) {}
+  }
+}
+
+async function editFlow(data) {
+  if (!data.holdings.length) return info("ยังไม่มีรายการ");
+  const list = data.holdings.slice().sort((a, b) => (a.date < b.date ? 1 : -1));
+  const i = await ask("เลือกรายการ", null, list.map((h) => `${h.type === "gold" ? "ทอง" : h.symbol} · ${fmt(h.qty, 4).replace(/\.?0+$/, "")} ${TYPES[h.type].unit} @ ${fmtPrice(h.avg)} · ${h.date}`));
+  if (i < 0) return;
+  const h = list[i];
+  const acts = ["แก้ไข", "ลบรายการนี้", "ย้ายหมวด (เปลี่ยนประเภทสินทรัพย์)"];
+  if (h.type === "fund") acts.push("ตั้งป้ายเขตการลงทุน");
+  const j = await ask(h.symbol, `หมวดปัจจุบัน: ${CATS[TYPES[h.type].cat].name}`, acts);
+  if (j === 2) {
+    const k = await ask("ย้ายไปหมวดไหน", "ทุกล็อตของ " + h.symbol + " จะย้ายไปด้วย", TYPE_ORDER.map((t) => (t === h.type ? "✓ " : "") + TYPES[t].label));
+    if (k < 0 || TYPE_ORDER[k] === h.type) return;
+    const nt = TYPE_ORDER[k];
+    for (const x of data.holdings) if (x.type === h.type && x.symbol === h.symbol) {
+      x.type = nt;
+      if (nt !== "us") delete x.fx;
+      if (nt === "gold") x.symbol = "HSH";
+    }
+    writeJSON(F_DATA, data);
+    if (nt === "fund") { await regionFlow(data, h.symbol); if (!data.navs[h.symbol]) await navFlow(data, h.symbol); }
+    if (h.type === "us" && nt !== "us") await info("ตรวจราคาเฉลี่ยด้วยนะ", "หุ้นต่างประเทศเก็บราคาเฉลี่ยเป็น USD ถ้าย้ายเป็นกองทุน/หุ้นไทย ให้แก้ราคาเฉลี่ยเป็นบาทต่อหน่วย");
+    return;
+  }
+  if (j === 3) return regionFlow(data, h.symbol);
+  if (j === 0) {
+    const n = await holdingForm(h.type, h);
+    if (n) { data.holdings[data.holdings.findIndex((x) => x.id === h.id)] = n; writeJSON(F_DATA, data); }
+  } else if (j === 1) {
+    const a = new Alert(); a.title = "ลบรายการ?"; a.message = `${h.symbol} ${h.qty} ${TYPES[h.type].unit} (${h.date})`;
+    a.addDestructiveAction("ลบ"); a.addCancelAction("ยกเลิก");
+    if ((await a.presentAlert()) === 0) { data.holdings = data.holdings.filter((x) => x.id !== h.id); writeJSON(F_DATA, data); }
+  }
+}
+
+async function navFlow(data, only) {
+  const funds = only ? [only] : [...new Set(data.holdings.filter((h) => h.type === "fund").map((h) => h.symbol))];
+  if (!funds.length) return info("ยังไม่มีกองทุน", "เพิ่มกองทุนก่อนจากเมนู \"เพิ่มรายการซื้อ\"");
+  let sym = funds[0];
+  if (funds.length > 1) {
+    const i = await ask("อัปเดต NAV", "เลือกกองทุน", funds.map((f) => `${f} · NAV ${data.navs[f] ? data.navs[f].nav + " (" + data.navs[f].date + ")" : "-"}`));
+    if (i < 0) return;
+    sym = funds[i];
+  }
+  const cur = data.navs[sym];
+  const a = new Alert(); a.title = "NAV ล่าสุด: " + sym; a.message = "ดูได้จากแอป Dime หรือเว็บ บลจ.";
+  const t = a.addTextField("NAV ต่อหน่วย (บาท)", cur ? String(cur.nav) : ""); t.setDecimalPadKeyboard();
+  a.addTextField("วันที่ NAV", ymd());
+  a.addAction("บันทึก"); a.addCancelAction("ยกเลิก");
+  if ((await a.presentAlert()) === -1) return;
+  const nav = num(a.textFieldValue(0));
+  if (!(nav > 0)) return info("NAV ไม่ถูกต้อง");
+  data.navs[sym] = { nav, date: a.textFieldValue(1) || ymd(), prev: cur ? cur.nav : nav };
+  writeJSON(F_DATA, data);
+}
+
+async function bitkubFlow() {
+  const has = Keychain.contains("pw_bk_key");
+  const i = await ask("Bitkub API", has
+    ? "ตั้งค่าไว้แล้ว — จำนวนเหรียญจะดึงจากบัญชี Bitkub (ต้นทุนยังใช้ราคาเฉลี่ยที่คุณกรอก)"
+    : "ไม่จำเป็นต้องใส่ — ถ้าไม่ใส่ จะใช้จำนวนเหรียญที่คุณกรอกเอง\nถ้าใส่ ให้สร้าง API key แบบอ่านอย่างเดียว (ไม่เปิดสิทธิ์เทรด/ถอน)",
+    has ? ["เปลี่ยน key", "ลบ key", "ทดสอบการเชื่อมต่อ"] : ["ใส่ API key"]);
+  if (i < 0) return;
+  if (has && i === 1) { Keychain.remove("pw_bk_key"); Keychain.remove("pw_bk_secret"); return info("ลบแล้ว"); }
+  if (has && i === 2) {
+    try { const b = await bitkubBalances(); return info("เชื่อมต่อสำเร็จ", Object.entries(b).map(([k, v]) => `${k}: ${v}`).join("\n") || "ไม่มีเหรียญในบัญชี"); }
+    catch (e) { return info("เชื่อมต่อไม่สำเร็จ", String(e.message || e)); }
+  }
+  const a = new Alert(); a.title = "Bitkub API key"; a.message = "เก็บใน Keychain ของเครื่องเท่านั้น";
+  a.addTextField("API Key"); a.addSecureTextField("API Secret");
+  a.addAction("บันทึก"); a.addCancelAction("ยกเลิก");
+  if ((await a.presentAlert()) === -1) return;
+  const k = a.textFieldValue(0).trim(), s = a.textFieldValue(1).trim();
+  if (!k || !s) return;
+  Keychain.set("pw_bk_key", k); Keychain.set("pw_bk_secret", s);
+  try { await bitkubBalances(); await info("เชื่อมต่อสำเร็จ"); }
+  catch (e) { await info("บันทึกแล้ว แต่เชื่อมต่อไม่สำเร็จ", String(e.message || e)); }
+}
+
+async function catFlow(data) {
+  const st = data.settings;
+  const i = await ask("🐱 ตั้งค่าแมว", `ชื่อ: ${st.catName} · สี: ${CAT_COLORS[st.catColor]}`, ["ตั้งชื่อแมว", "เปลี่ยนสีแมว", "ธีม widget"]);
+  if (i === 0) {
+    const a = new Alert(); a.title = "ชื่อแมว"; a.addTextField("ชื่อ", st.catName);
+    a.addAction("บันทึก"); a.addCancelAction("ยกเลิก");
+    if ((await a.presentAlert()) === 0 && a.textFieldValue(0).trim()) st.catName = a.textFieldValue(0).trim().slice(0, 12);
+  } else if (i === 1) {
+    const keys = Object.keys(CAT_COLORS);
+    const j = await ask("เลือกสีแมว", null, keys.map((k) => (k === st.catColor ? "✓ " : "") + CAT_COLORS[k]));
+    if (j >= 0) st.catColor = keys[j];
+  } else if (i === 2) {
+    const modes = [["auto", "อัตโนมัติ (ตามโหมดมืด/สว่าง)"], ["light", "กระดาษครีม (สว่าง)"], ["dark", "ราตรีม่วง (มืด)"]];
+    const j = await ask("ธีม widget", null, modes.map(([k, n]) => (k === st.theme ? "✓ " : "") + n));
+    if (j >= 0) st.theme = modes[j][0];
+  } else return;
+  writeJSON(F_DATA, data);
+}
+
+async function goalFlow(data) {
+  const a = new Alert(); a.title = "🎯 เป้าหมายพอร์ต";
+  a.message = "แมวจะแสดงแถบ EXP ใน widget ใหญ่ ใส่ 0 เพื่อปิด";
+  const t = a.addTextField("มูลค่าเป้าหมาย (บาท)", data.settings.goal ? String(data.settings.goal) : ""); t.setDecimalPadKeyboard();
+  a.addAction("บันทึก"); a.addCancelAction("ยกเลิก");
+  if ((await a.presentAlert()) === -1) return;
+  const g = num(a.textFieldValue(0));
+  data.settings.goal = g > 0 ? g : 0;
+  writeJSON(F_DATA, data);
+}
+
+async function backupFlow(data) {
+  const i = await ask("💾 สำรอง / กู้คืน", "ข้อมูลพอร์ตเก็บอยู่ที่ iCloud Drive/Scriptable/PortfolioWidget อยู่แล้ว เมนูนี้ไว้สำรองเพิ่มหรือย้ายเครื่อง",
+    ["คัดลอกข้อมูลไปคลิปบอร์ด", "กู้คืนจากคลิปบอร์ด"]);
+  if (i === 0) {
+    const hist = await readJSON(F_HIST, []);
+    Pasteboard.copy(JSON.stringify({ v: 2, data, hist }));
+    await info("คัดลอกแล้ว", "วางเก็บไว้ในโน้ตได้เลย");
+  } else if (i === 1) {
+    try {
+      const j = JSON.parse(Pasteboard.paste() || "");
+      const d = j.data || j;
+      if (!Array.isArray(d.holdings)) throw new Error("ไม่พบรายการพอร์ต");
+      const a = new Alert(); a.title = "กู้คืนข้อมูล?"; a.message = `${d.holdings.length} รายการ — ข้อมูลปัจจุบันจะถูกแทนที่`;
+      a.addDestructiveAction("กู้คืน"); a.addCancelAction("ยกเลิก");
+      if ((await a.presentAlert()) !== 0) return;
+      writeJSON(F_DATA, d);
+      if (Array.isArray(j.hist)) writeJSON(F_HIST, j.hist);
+      await info("กู้คืนสำเร็จ");
+    } catch (e) { await info("กู้คืนไม่สำเร็จ", "ในคลิปบอร์ดไม่ใช่ข้อมูลสำรองของพอร์ต"); }
+  }
+}
+
+function sampleData(settings) {
+  return {
+    holdings: [
+      { id: uid(), type: "us", symbol: "VOO", qty: 2, avg: 480, fx: 34.5, date: "2026-01-10" },
+      { id: uid(), type: "fund", symbol: "K-USA-A(A)", qty: 3000, avg: 14.8, date: "2026-02-03" },
+      { id: uid(), type: "thai", symbol: "PTT", qty: 500, avg: 32.75, date: "2026-03-15" },
+      { id: uid(), type: "thai", symbol: "CPALL", qty: 200, avg: 55.5, date: "2026-04-20" },
+      { id: uid(), type: "crypto", symbol: "BTC", qty: 0.015, avg: 2400000, date: "2026-05-02" },
+      { id: uid(), type: "crypto", symbol: "ETH", qty: 0.3, avg: 85000, date: "2026-06-11" },
+      { id: uid(), type: "gold", symbol: "HSH", qty: 1, avg: 61500, date: "2026-07-01" },
+    ],
+    navs: { "K-USA-A(A)": { nav: 15.9, date: ymd(), prev: 15.9 } },
+    settings, sample: true,
+  };
+}
+
+async function loadAll() {
+  const data = await readJSON(F_DATA, { holdings: [], navs: {} });
+  data.holdings ||= [];
+  data.navs ||= {};
+  data.settings = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
+  if (!data.holdings.length && !Keychain.contains("pw_bk_key")) return { data, S: null, hist: [] };
+  const P = await fetchPrices(data);
+  const S = compute(data, P);
+  const hist = data.sample ? [] : await saveHistory(S);
+  return { data, S, hist };
+}
+
+async function appMenu() {
+  while (true) {
+    const { data, S, hist } = await loadAll();
+    const st = data.settings;
+    const act = catActivity(S, st);
+    const note = await updateNotice();
+    const msg = (note ? note + "\n\n" : "") + (S ? `฿${fmt(S.total)}  ${signed(S.pl)} (${pctStr(S.plPct)})\n` : "") + `🐱 ${st.catName}: "${actLine(S, act)}"\n🇹🇭 SET ${act.M.th.label}\n🇺🇸 US ${act.M.us.label}`;
+    const opts = ["🐾 ห้องแมว (แมวขยับได้)", "📊 ดูพอร์ตและกราฟ", "📸 นำเข้าจากรูปด้วย AI (หลายรายการ)", "➕ เพิ่มรายการซื้อ", "✏️ แก้ไข / ลบรายการ", "📝 อัปเดต NAV กองทุน",
+      "🐱 ตั้งค่าแมว / ธีม", "🎯 ตั้งเป้าหมายพอร์ต", "👁 พรีวิว Widget", "🔑 Bitkub API (ไม่บังคับ)", "💾 สำรอง / กู้คืนข้อมูล", `🔄 อัปเดต (v${VERSION})`, "📤 แชร์ให้เพื่อน"];
+    if (!data.holdings.length) opts.push("🧪 ใส่ข้อมูลตัวอย่างเพื่อทดลอง");
+    if (data.sample) opts.push("🧹 ล้างข้อมูลตัวอย่าง");
+    const i = await ask(`PIXEL CAT PORTFOLIO v${VERSION}`, msg, opts, "ปิด");
+    if (i < 0) return;
+    const pick = opts[i];
+    if (pick.startsWith("🐾")) await WebView.loadHTML(roomHTML(S, hist, st), null, null, true);
+    else if (pick.startsWith("📊")) { if (S) await WebView.loadHTML(reportHTML(S, hist, st), null, null, true); else await info("ยังไม่มีข้อมูล", "เพิ่มรายการซื้อก่อน"); }
+    else if (pick.startsWith("➕")) { if (data.sample) { data.holdings = []; data.navs = {}; delete data.sample; } await addFlow(data); }
+    else if (pick.startsWith("📸")) await aiImportFlow(data);
+    else if (pick.startsWith("✏️")) await editFlow(data);
+    else if (pick.startsWith("📝")) await navFlow(data);
+    else if (pick.startsWith("🐱")) await catFlow(data);
+    else if (pick.startsWith("🎯")) await goalFlow(data);
+    else if (pick.startsWith("🔑")) await bitkubFlow();
+    else if (pick.startsWith("💾")) await backupFlow(data);
+    else if (pick.startsWith("🔄")) { if ((await updateFlow(data)) === "exit") return; }
+    else if (pick.startsWith("📤")) await shareFlow();
+    else if (pick.startsWith("👁")) {
+      const fams = [["small", "เล็ก", "presentSmall"], ["medium", "กลาง", "presentMedium"], ["large", "ใหญ่", "presentLarge"],
+        ["accessoryRectangular", "ล็อกสกรีน: สี่เหลี่ยม", "presentAccessoryRectangular"], ["accessoryCircular", "ล็อกสกรีน: วงกลม", "presentAccessoryCircular"],
+        ["accessoryInline", "ล็อกสกรีน: บรรทัดบน", "presentAccessoryInline"]];
+      const j = await ask("พรีวิว", null, fams.map((f) => f[1]));
+      if (j >= 0) {
+        const [fam, , fn] = fams[j];
+        const w = buildWidget(S, hist, fam, st);
+        if (typeof w[fn] === "function") await w[fn]();
+        else await info("พรีวิวไม่ได้", "Scriptable เวอร์ชันนี้ยังพรีวิวล็อกสกรีนไม่ได้ ให้เพิ่ม widget ที่หน้าจอล็อกเพื่อดูได้เลย");
+      }
+    }
+    else if (pick.startsWith("🧪")) writeJSON(F_DATA, sampleData(st));
+    else if (pick.startsWith("🧹")) writeJSON(F_DATA, { holdings: [], navs: {}, settings: st });
+  }
+}
+
+// ---------- main ----------
+if (config.runsInWidget || config.runsInAccessoryWidget) {
+  let w;
+  try {
+    const { data, S, hist } = await loadAll();
+    w = buildWidget(S, hist, config.widgetFamily, data.settings);
+  } catch (e) {
+    T = makeTheme("auto");
+    w = new ListWidget(); w.backgroundColor = T.bg; w.setPadding(12, 12, 12, 12);
+    txt(w, "แมวสะดุด เมี้ยว…", 12, { w: "heavy" });
+    txt(w, String(e.message || e), 9, { color: T.sub, lines: 3 });
+    w.refreshAfterDate = new Date(Date.now() + 5 * 60 * 1000);
+  }
+  Script.setWidget(w);
+  // อัปเดตเบื้องหลัง (ไม่ทำให้ widget พัง ถ้าเน็ตไม่ดีจะข้ามไป) — โค้ดใหม่มีผลในการรีเฟรชรอบถัดไป
+  try {
+    const d = await readJSON(F_DATA, {});
+    if (!d.settings || d.settings.autoUpdate !== false) await checkUpdate();
+  } catch (e) {}
+} else {
+  // ผู้ใช้ใหม่ (เช่น เพื่อนที่ติดตั้งผ่านลิงก์): ทักทาย + ตั้งชื่อแมว
+  try {
+    const d0 = await readJSON(F_DATA, null);
+    if (!d0) {
+      const a = new Alert(); a.title = "ยินดีต้อนรับสู่ Pixel Cat Portfolio 🐱";
+      a.message = "ตั้งชื่อแมวประจำพอร์ตของคุณ (เปลี่ยนทีหลังได้)";
+      a.addTextField("ชื่อแมว", "ส้มจี๊ด"); a.addAction("เริ่มเลย");
+      await a.presentAlert();
+      const nm = (a.textFieldValue(0) || "").trim() || "ส้มจี๊ด";
+      writeJSON(F_DATA, { holdings: [], navs: {}, settings: Object.assign({}, DEFAULT_SETTINGS, { catName: nm.slice(0, 12) }) });
+    }
+  } catch (e) {}
+  // เปิดแอปเองก็เช็กอัปเดตเงียบๆ (ไม่บล็อกถ้าเน็ตช้า)
+  try { const d = await readJSON(F_DATA, {}); if (!d.settings || d.settings.autoUpdate !== false) await checkUpdate(); } catch (e) {}
+  // แตะ widget → เปิดห้องแมวก่อน แล้วค่อยเข้าเมนู
+  if (args.queryParameters && args.queryParameters.open === "room") {
+    try { const { data, S, hist } = await loadAll(); await WebView.loadHTML(roomHTML(S, hist, data.settings), null, null, true); } catch (e) {}
+  }
+  await appMenu();
+}
+Script.complete();
