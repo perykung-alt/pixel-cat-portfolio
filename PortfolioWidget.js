@@ -66,7 +66,7 @@ const SPR = {"base":["......................","..K..........K........",".KPK....
 // @shared-end
 
 // ---------- เวอร์ชัน & อัปเดตอัตโนมัติ ----------
-const VERSION = "6.2.1";
+const VERSION = "6.2.2";
 const REPO = "perykung-alt/pixel-cat-portfolio";
 const UPDATE_BASE = `https://raw.githubusercontent.com/${REPO}/main/`;
 const REPO_URL = `https://github.com/${REPO}`;
@@ -357,6 +357,17 @@ async function fetchPrices(data) {
   await Promise.all(jobs);
 
   if (bk) for (const [sym, p] of Object.entries(bk)) prices["crypto:" + sym] = p;
+  // สำรอง: หุ้นที่ Yahoo ดึงไม่ได้ → CNBC (ขอทีละหลายตัว)
+  const miss = yahooSyms.filter((k) => !prices[k]).map((k) => k.split(":"));
+  if (miss.length || (need("us") && !fx)) {
+    try {
+      const list = miss.map(([t, s]) => cnbcSym(t, s)); if (!fx) list.push("THB=");
+      const r = new Request(cnbcURL(list)); r.timeoutInterval = 15;
+      const got = parseCNBC(await r.loadJSON());
+      for (const [t, s] of miss) { const q = got[cnbcSym(t, s)]; if (q) { prices[key(t, s)] = q; const i = errors.indexOf(s); if (i >= 0) errors.splice(i, 1); } }
+      if (!fx && got["THB="]) { fx = got["THB="]; const i = errors.indexOf("USD/THB"); if (i >= 0) errors.splice(i, 1); }
+    } catch (e) {}
+  }
   let stale = false;
   for (const h of hs) {
     const k = key(h.type, h.symbol);
@@ -450,6 +461,25 @@ function compute(data, P) {
   };
 }
 
+// @shared-end
+// @shared-begin
+// ราคาหุ้นจาก CNBC: หุ้นไทยใช้ "PTT-TH", หุ้นสหรัฐฯ ใช้ชื่อปกติ (BRK-B → BRK.B), เรท USD/THB ใช้ "THB=" · ขอได้ทีละหลายตัว
+function cnbcSym(type, sym) { return type === "thai" ? sym + "-TH" : type === "fx" ? "THB=" : String(sym).replace(/-/g, "."); }
+function cnbcURL(list) {
+  return "https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=" + encodeURIComponent(list.join("|")) +
+    "&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json";
+}
+function parseCNBC(j) {
+  const out = {};
+  const arr = (j && j.FormattedQuoteResult && j.FormattedQuoteResult.FormattedQuote) || [];
+  for (const q of [].concat(arr)) {
+    if (!q || String(q.code) !== "0") continue;
+    const last = num(q.last); if (!(last > 0)) continue;
+    const ch = num(q.change), pdc = num(q.previous_day_closing);
+    out[q.symbol] = { price: last, prev: isFinite(ch) ? last - ch : pdc > 0 ? pdc : last, at: Date.now(), src: "cnbc" };
+  }
+  return out;
+}
 // @shared-end
 async function saveHistory(S) {
   if (!(S.total > 0)) return [];
@@ -1780,8 +1810,10 @@ async function aiImportFlow(data) {
   let bk = null, gold = null;
   const priceOf = async (x) => {
     try {
-      if (x.type === "us") return (await yahoo(x.symbol)).price;
-      if (x.type === "thai") return (await yahoo(x.symbol + ".BK")).price;
+      if (x.type === "us" || x.type === "thai") {
+        try { return (await yahoo(x.type === "thai" ? x.symbol + ".BK" : x.symbol)).price; }
+        catch (e) { const r = new Request(cnbcURL([cnbcSym(x.type, x.symbol)])); const q = parseCNBC(await r.loadJSON())[cnbcSym(x.type, x.symbol)]; if (q) return q.price; throw e; }
+      }
       if (x.type === "crypto") { bk ||= await bitkubTicker(); return bk[x.symbol] ? bk[x.symbol].price : NaN; }
       if (x.type === "gold") { gold ||= await hshGold(); return gold.price; }
       if (x.type === "fund") return isFinite(x.nav) ? x.nav : data.navs[x.symbol] ? data.navs[x.symbol].nav : NaN;

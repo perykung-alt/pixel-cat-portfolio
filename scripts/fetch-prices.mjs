@@ -156,7 +156,29 @@ async function stooq(symbols) {
 const want = [...[...thai].map((s) => s + ".BK"), ...us, "THB=X"];
 const got = {};
 const srcErr = [];
-try { Object.assign(got, await yahooBatch(want)); } catch (e) { srcErr.push("yahoo-quote " + e.message); }
+// หลัก: CNBC (ขอได้ทีละหลายตัว ไม่บล็อกเซิร์ฟเวอร์ GitHub) — หุ้นไทยใช้ "-TH", เรทเงินใช้ "THB="
+async function cnbc(list) {
+  const res = {};
+  const toC = (k) => (k === "THB=X" ? "THB=" : k.endsWith(".BK") ? k.slice(0, -3) + "-TH" : k.replace(/-/g, "."));
+  for (let i = 0; i < list.length; i += 40) {
+    const chunk = list.slice(i, i + 40);
+    try {
+      const url = "https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=" + encodeURIComponent(chunk.map(toC).join("|")) + "&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json";
+      const j = await getJSON(url, { timeout: 20000 });
+      const arr = [].concat((j.FormattedQuoteResult && j.FormattedQuoteResult.FormattedQuote) || []);
+      const by = Object.fromEntries(arr.map((q) => [q.symbol, q]));
+      for (const k of chunk) {
+        const q = by[toC(k)]; if (!q || String(q.code) !== "0") continue;
+        const last = num(q.last), ch = num(q.change), pdc = num(q.previous_day_closing);
+        if (last > 0) res[k] = { price: last, prev: isFinite(ch) ? last - ch : pdc > 0 ? pdc : last, at: Date.now(), src: "cnbc" };
+      }
+    } catch (e) { srcErr.push("cnbc " + e.message); }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  return res;
+}
+Object.assign(got, await cnbc(want));
+if (want.some((k) => !got[k])) { try { Object.assign(got, await yahooBatch(want.filter((k) => !got[k]))); } catch (e) { srcErr.push("yahoo-quote " + e.message); } }
 let missing = want.filter((k) => !got[k]);
 if (missing.length) { try { Object.assign(got, await yahooSpark(missing)); } catch (e) { srcErr.push("yahoo-spark " + e.message); } }
 missing = [...us].filter((k) => !got[k]);

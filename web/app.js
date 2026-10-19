@@ -24,7 +24,22 @@ let S = null;
 const save = () => { const d = Object.assign({}, data); delete d.fresh; LS.set("pcp:data", d); };
 
 // ---------- ราคา ----------
-async function loadFeed() {
+// ดึงราคาหุ้นสดจาก CNBC ตรงจากมือถือ (ได้ทุกตัว ไม่จำกัดแค่รายชื่อในระบบ)
+async function fetchStocks(list) {
+  const want = [...new Map(list.filter((x) => x.type === "thai" || x.type === "us").map((x) => [key(x.type, x.symbol), x])).values()];
+  const got = {};
+  for (let i = 0; i < want.length; i += 40) {
+    const chunk = want.slice(i, i + 40);
+    try {
+      const r = await fetch(cnbcURL(chunk.map((x) => cnbcSym(x.type, x.symbol)).concat(i === 0 ? ["THB="] : [])));
+      const q = parseCNBC(await r.json());
+      for (const x of chunk) { const v = q[cnbcSym(x.type, x.symbol)]; if (v) { got[key(x.type, x.symbol)] = v; feed.stocks[x.type === "thai" ? x.symbol + ".BK" : x.symbol] = v; } }
+      if (q["THB="]) feed.fx = q["THB="];
+    } catch (e) {}
+  }
+  return got;
+}
+async function loadFeed(extra = []) {
   // 1) ไฟล์ราคาจาก GitHub (หุ้นไทย/หุ้นนอก ฯลฯ)
   try {
     const r = await fetch("data/prices.json?t=" + Date.now(), { cache: "no-store" });
@@ -32,9 +47,10 @@ async function loadFeed() {
     feed = await r.json();
   } catch (e) { if (!feed) feed = { stocks: {}, crypto: {} }; }
   feed.stocks ||= {}; feed.crypto ||= {};
-  // 2) ราคาสดที่มือถือดึงตรงได้: คริปโต (Bitkub), ทอง (ฮั่วเซ่งเฮง), USD/THB
-  const need = (t) => data.holdings.some((h) => h.type === t);
-  const jobs = [];
+  // 2) ราคาสดที่มือถือดึงตรงได้: หุ้น + USD/THB (CNBC), คริปโต (Bitkub), ทอง (ฮั่วเซ่งเฮง)
+  const all = data.holdings.concat(extra);
+  const need = (t) => all.some((h) => h.type === t);
+  const jobs = [fetchStocks(all)];
   if (need("crypto")) jobs.push(fetch("https://api.bitkub.com/api/v3/market/ticker").then((r) => r.json()).then((arr) => {
     for (const t of arr) {
       const [base, q] = String(t.symbol).split("_"); if (q !== "THB") continue;
@@ -47,7 +63,8 @@ async function loadFeed() {
     const h = arr.find((x) => x.GoldType === "HSH") || arr[0]; const buy = num(h.Buy), chg = num(h.BuyChange) || 0;
     if (isFinite(buy)) feed.gold = { price: buy, prev: buy - chg, sell: num(h.Sell), at: Date.now() };
   }).catch(() => {}));
-  if (need("us") || !feed.fx) jobs.push(fetch("https://open.er-api.com/v6/latest/USD").then((r) => r.json()).then((j) => {
+  await Promise.all(jobs); jobs.length = 0;
+  if (!feed.fx || Date.now() - (feed.fx.at || 0) > 6 * 3600e3) jobs.push(fetch("https://open.er-api.com/v6/latest/USD").then((r) => r.json()).then((j) => {
     const v = j.rates && j.rates.THB; if (v) feed.fx = { price: v, prev: feed.fx && feed.fx.prev ? feed.fx.prev : v, at: Date.now() };
   }).catch(() => {}));
   await Promise.all(jobs);
@@ -469,7 +486,7 @@ async function aiImport() {
   let items;
   try { items = parseAI($("aiText").value); } catch (e) { toast(e.message + " — คัดลอกคำตอบของ AI ทั้งก้อนมาวาง", 4000); return; }
   toast("กำลังดึงราคาล่าสุด…", 1500);
-  await loadFeed();
+  await loadFeed(items.filter((x) => x.type && x.symbol));
   const f = feed, fx = f.fx ? f.fx.price : NaN;
   const priceFor = (x) => {
     if (x.type === "fund") return isFinite(x.nav) ? x.nav : data.navs[x.symbol] ? data.navs[x.symbol].nav : NaN;
@@ -485,16 +502,16 @@ async function aiImport() {
     for (let tries = 0; !x.ok && x.needPrice && tries < 3; tries++) {
       const cur = x.type === "us" ? "USD" : "บาท";
       const r = await askDialog(`<h2>ต้องการราคา ${esc(x.symbol)}</h2>
-        <div class="sub">ภาพมีแค่มูลค่า ${fmtPrice(x.value)} ${esc(x.currency || cur)} ระบบต้องใช้ราคาปัจจุบันต่อ${TYPES[x.type] ? TYPES[x.type].unit : "หน่วย"}เพื่อคำนวณจำนวนและต้นทุนเฉลี่ย ดูราคาได้ในแอป Dime</div>
-        <label for="q_p">ราคาปัจจุบัน (${cur})</label><input id="q_p" name="p" inputmode="decimal" placeholder="เช่น 182.50">
+        <div class="sub">หาราคา ${esc(x.symbol)} ไม่เจอ — ถ้า AI อ่านชื่อผิด แก้ชื่อแล้วกด "คำนวณ" ได้เลย (ไม่ต้องใส่ราคา) · ภาพมีแค่มูลค่า ${fmtPrice(x.value)} ${esc(x.currency || cur)} ระบบต้องใช้ราคาปัจจุบันต่อ${TYPES[x.type] ? TYPES[x.type].unit : "หน่วย"}เพื่อคำนวณจำนวนและต้นทุนเฉลี่ย ดูราคาได้ในแอป Dime</div>
         <label for="q_s">ชื่อหุ้น (แก้ได้ถ้า AI อ่านผิด)</label><input id="q_s" name="s" value="${esc(x.symbol)}" autocapitalize="characters">
+        <label for="q_p">หรือใส่ราคาปัจจุบันเอง (${cur})</label><input id="q_p" name="p" inputmode="decimal" placeholder="เว้นว่าง = ให้ระบบหาราคาให้">
         <div class="acts"><button class="btn" value="skip" formnovalidate>ข้ามตัวนี้</button><button class="btn pri" value="ok">คำนวณ</button></div>`);
       if (r.value !== "ok") break;
       const ns = String(r.fd.get("s") || "").toUpperCase().trim().replace(/\.BK$/, "");
       if (ns) x.symbol = ns;
       const p = num(r.fd.get("p"));
       if (p > 0) { data.manual[key(x.type, x.symbol)] = { price: p, at: Date.now() }; completeAI(x, p); }
-      else completeAI(x, priceFor(x));
+      else { await fetchStocks([x]); completeAI(x, priceFor(x)); }
     }
   }
   const line = (x) => `<div class="li"><span>${x.ok ? "•" : "⚠︎"} <b>${esc(x.symbol || "?")}</b> <span class="sub">${x.type ? CATS[TYPES[x.type].cat].name : "?"}${x.moved ? " (แก้หมวดให้)" : ""}${x.region ? " · " + REGION[x.region] : ""}</span></span><span style="text-align:right">${isFinite(x.qty) ? qtyStr(x.qty, x.type) : "?"} @ ${isFinite(x.avg) ? fmtPrice(x.avg) + (x.type === "us" ? " USD" : "") : "?"}${x.derived ? `<br><span class="sub">คำนวณจากมูลค่า</span>` : ""}</span></div>`;
