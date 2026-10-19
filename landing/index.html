@@ -92,7 +92,7 @@ if ((await a.presentAlert()) === 0) Safari.open(&quot;scriptable:///run?scriptNa
       <li>ถ้าขึ้นเตือน ให้กด <b>การตั้งค่า</b> → อนุญาต <b>ติดตั้งแอปที่ไม่รู้จัก</b> จาก Chrome → กลับมากด <b>ติดตั้ง</b></li>
       <li>กดค้างที่หน้าจอหลัก → <b>วิดเจ็ต</b> → <b>Pixel Cat พอร์ต</b> → ลากไปวาง</li>
     </ol>
-    <a class="btn" href="https://github.com/perykung-alt/pixel-cat-portfolio/releases/latest/download/pixel-cat.apk">⬇️ ดาวน์โหลดแอป (APK)</a>
+    <a class="btn" id="apkBtn" href="https://github.com/perykung-alt/pixel-cat-portfolio/releases/latest/download/pixel-cat.apk">⬇️ ดาวน์โหลดแอป (APK)</a>
     <a class="btn alt" href="https://perykung-alt.github.io/pixel-cat-portfolio/">🌐 ใช้แบบเว็บแอปแทน</a>
     <div class="sub" style="margin-top:8px">เวอร์ชันใหม่: แอปจะเด้งบอกเอง กดดาวน์โหลดแล้วติดตั้งทับ ข้อมูลไม่หาย</div>
   </section>
@@ -104,7 +104,7 @@ if ((await a.presentAlert()) === 0) Safari.open(&quot;scriptable:///run?scriptNa
   </section>
 
   <div class="card sub">
-    🔒 ข้อมูลพอร์ตเก็บในเครื่องของคุณเท่านั้น ไม่ถูกส่งไปที่ไหน · ย้ายเครื่องได้ด้วยเมนู 💾 สำรอง
+    🔒 ข้อมูลพอร์ตเก็บในเครื่องของคุณ · เลือกเข้าสู่ระบบด้วย Google ได้ (Android / คอม) เพื่อเก็บบนคลาวด์และใช้ร่วมกันหลายเครื่อง — เห็นได้เฉพาะเจ้าของบัญชี · ย้ายเครื่องได้ด้วยเมนู 💾 สำรอง
     · โค้ดทั้งหมดเปิดเผยที่ <a href="https://github.com/perykung-alt/pixel-cat-portfolio" target="_blank" rel="noopener">GitHub</a>
   </div>
 </main>
@@ -119,6 +119,11 @@ if ((await a.presentAlert()) === 0) Safari.open(&quot;scriptable:///run?scriptNa
   el.parentNode.insertBefore(el, document.getElementById("ios"));
   document.getElementById("pick").textContent = "เจอเครื่องของคุณแล้ว 👇 (หรือเลือกแบบอื่นด้านล่าง)";
   function toast(m) { var t = document.getElementById("toast"); t.textContent = m; t.style.display = "block"; setTimeout(function () { t.style.display = "none"; }, 2500); }
+  // ยังไม่มี APK ที่ปล่อยจริง → บอกให้ใช้เว็บแอปไปก่อน แทนลิงก์เสีย
+  fetch("https://api.github.com/repos/perykung-alt/pixel-cat-portfolio/releases/latest").then(function (r) {
+    if (r.ok) return r.json().then(function (j) { var b = document.getElementById("apkBtn"); b.textContent = "⬇️ ดาวน์โหลดแอป " + (j.tag_name || "").replace("android-", ""); });
+    if (r.status === 404) { var b = document.getElementById("apkBtn"); b.removeAttribute("href"); b.style.opacity = ".55"; b.textContent = "⏳ แอปกำลังเตรียม — ใช้เว็บแอปไปก่อน"; }
+  }).catch(function () {});
   document.getElementById("copyInst").onclick = function () {
     var s = document.getElementById("inst").textContent;
     (navigator.clipboard ? navigator.clipboard.writeText(s) : Promise.reject()).then(function () { toast("คัดลอกแล้ว ไปวางใน Scriptable ได้เลย"); }, function () {
