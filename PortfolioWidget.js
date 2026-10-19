@@ -3,7 +3,7 @@
 // icon-color: orange; icon-glyph: cat;
 /*
  * ==========================================================
- *  PIXEL CAT PORTFOLIO  v6  — หุ้นไทย / หุ้นต่างประเทศ / กองทุนรวม / คริปโต / ทองคำ
+ *  PIXEL CAT PORTFOLIO  v6.1  — หุ้นไทย / หุ้นต่างประเทศ / กองทุนรวม / คริปโต / ทองคำ
  *  สำหรับแอป Scriptable (iOS) · widget เล็ก / กลาง / ใหญ่ / ล็อกสกรีน
  * ----------------------------------------------------------
  *  อัปเดตอัตโนมัติ: สคริปต์เช็กเวอร์ชันใหม่จาก GitHub เอง (ทุก 6 ชม.) แล้วเขียนทับตัวเอง
@@ -26,6 +26,7 @@ const REFRESH_MIN = 15;
 //  • กองทุนรวมที่จดทะเบียนในไทย (เช่น KKP US500-UH-E, K-USA-A(A)) = "กองทุนรวม" เสมอ
 //    แม้จะลงทุนหุ้นต่างประเทศ → แสดงป้าย "ลงทุนต่างประเทศ" แยกให้แทน
 //  • "หุ้นต่างประเทศ" = หุ้น/ETF ที่ซื้อตรงในตลาดต่างประเทศ ราคาเป็น USD เท่านั้น
+// @shared-begin
 const CATS = {
   thai:   { name: "หุ้นไทย",        short: "หุ้นไทย", color: "#FF8A3D" },
   us:     { name: "หุ้นต่างประเทศ", short: "หุ้นนอก", color: "#4AA3FF" },
@@ -62,12 +63,14 @@ const DEFAULT_SETTINGS = { catName: "ส้มจี๊ด", catColor: "orange",
 
 // ---------- สไปรต์แมวพิกเซล ----------
 const SPR = {"base":["......................","..K..........K........",".KPK........KPK.......",".KPPK......KPPK.......","KOPPOKKKKKKOPPOK......","KOOOOODOODOOOOOK......","KOOOOOODDOOOOOOK......","KOOEEOOOOOOEEOOK......","KOOEWOOOOOOEWOOK......","KPOOOOLNNLOOOOPK......","KOOOOLKLLKLOOOOK......",".KOOOOLLLLOOOOK.......","..KKOOOOOOOOKK...KK...","..KOOOLLLLOOOK..KOOK..",".KOODLLLLLLDOOK..KOK..",".KOODLLLLLLDOOK.KOK...",".KOOOLLLLLLOOOKKOK....",".KLLKOOLLOOKLLKOOK....","ccKKKKKKKKKKKKKKKcc...","cCCCCCCCCCCCCCCCCCCc..",".cccccccccccccccccc..."],"eyes":{"normal":[["KOOEEOOOOOOEEOOK",7],["KOOEWOOOOOOWEOOK",8]],"happy":[["KOOKKOOOOOOKKOOK",7],["KOKOOKOOOOKOOKOK",8]],"sad":[["KOKOOOOOOOOOOKOK",6],["KOOKEOOOOOOEKOOK",7],["KOOEWOOOOOOWEOOK",8]],"sleep":[["KOOOOOOOOOOOOOOK",7],["KOKKKOOOOOOKKKOK",8]],"wow":[["KOOEEOODDOOEEOOK",6],["KOEEWOOOOOOEEWOK",7],["KOEEEOOOOOOEEEOK",8]]},"mouth":{"normal":["KOOOOLKLLKLOOOOK",10],"happy":["KOOOOLKLLKLOOOOK",10],"sad":["KOOOOLLKKLLOOOOK",10],"sleep":["KOOOOLLKKLLOOOOK",10],"wow":["KOOOOLLKKLLOOOOK",10]},"extra":{"sad":[[3,9,"B"],[3,10,"B"]],"wow":[[19,1,"Y"],[18,2,"Y"],[19,2,"W"],[20,2,"Y"],[17,3,"Y"],[18,3,"W"],[19,3,"W"],[20,3,"W"],[21,3,"Y"],[18,4,"Y"],[19,4,"W"],[20,4,"Y"],[19,5,"Y"]],"happy":[[17,3,"P"],[18,3,"P"],[20,3,"P"],[21,3,"P"],[17,4,"P"],[18,4,"P"],[19,4,"P"],[20,4,"P"],[21,4,"P"],[18,5,"P"],[19,5,"P"],[20,5,"P"],[19,6,"P"],[18,3,"W"]],"sleep":[[18,0,"Z"],[19,0,"Z"],[20,0,"Z"],[21,0,"Z"],[20,1,"Z"],[19,2,"Z"],[18,3,"Z"],[19,3,"Z"],[20,3,"Z"],[21,3,"Z"]]},"palettes":{"orange":{"K":"#3B2418","O":"#F59B42","D":"#C8681E","L":"#FFE3B8","P":"#FF8FA3","N":"#E85A7A","E":"#2A1A12","W":"#FFFFFF"},"gray":{"K":"#22252E","O":"#9AA3B2","D":"#6B7385","L":"#E9EDF3","P":"#FF9EB1","N":"#E2627F","E":"#14161C","W":"#FFFFFF"},"black":{"K":"#0E0E14","O":"#3A3A4A","D":"#2A2A36","L":"#5A5A70","P":"#FF8FA3","N":"#E85A7A","E":"#FFD84A","W":"#FFFFFF"},"white":{"K":"#4A3F3A","O":"#FFF8EE","D":"#F0DCC4","L":"#FFFFFF","P":"#FFA8B8","N":"#F07A93","E":"#3A6FD8","W":"#FFFFFF"},"calico":{"K":"#3A2418","O":"#FFF5E6","D":"#F28C38","L":"#FFFFFF","P":"#FF9EB1","N":"#E85A7A","E":"#2A1A12","W":"#FFFFFF"},"scottish":{"K":"#2E2620","O":"#9C8B74","D":"#55473A","L":"#FFFFFF","P":"#E9A0A8","N":"#C97B7B","E":"#1F2620","W":"#FFFFFF","G":"#93AE80"},"british":{"K":"#2A1A10","O":"#8A5A2E","D":"#5A3519","L":"#D9B88A","P":"#D9928A","N":"#B5655E","E":"#C7861A","W":"#FFF3D0"}},"fixed":{"C":"#E2464F","c":"#9E2A3A","B":"#5BC0FF","Y":"#FFD84A","Z":"#8FB8FF","G":"#93AE80"},"breeds":{"scottish":{"rows":{"1":"................","2":"................","3":".KKK........KKK.","4":"KODOKKKKKKKKODOK","5":"KOOOODODDODOOOOK","6":"KOOOOOODDOOOOOOK","14":".KODDLLLLLLDDOK.","15":".KOOOLLLLLLOOOK."},"eyes":{"normal":[["KOOGGOODDOOGGOOK",6],["KOGEWOOOOOOWEGOK",7],["KOGEEOOOOOOEEGOK",8]],"wow":[["KOGGGOODDOOGGGOK",6],["KOGEWOOOOOOWEGOK",7],["KOGEEOOOOOOEEGOK",8]]}},"british":{"rows":{"1":"................","2":"................","3":".KK..........KK.","4":"KPPKKKKKKKKKKPPK","5":"KOOOOOODDOOOOOOK","6":"KOOOOOOOOOOOOOOK"},"eyes":{"normal":[["KOOKKOOOOOOKKOOK",7],["KOOEEOOOOOOEEOOK",8]]}}}};
+// @shared-end
 
 // ---------- เวอร์ชัน & อัปเดตอัตโนมัติ ----------
-const VERSION = "6.0.0";
+const VERSION = "6.1.0";
 const REPO = "perykung-alt/pixel-cat-portfolio";
 const UPDATE_BASE = `https://raw.githubusercontent.com/${REPO}/main/`;
 const REPO_URL = `https://github.com/${REPO}`;
+const WEB_URL = "https://perykung-alt.github.io/pixel-cat-portfolio/";
 const UPDATE_EVERY_H = 6;
 function verCmp(a, b) {
   const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number);
@@ -152,9 +155,10 @@ async function updateFlow(data) {
 }
 async function shareFlow() {
   const i = await ask("📤 แชร์ให้เพื่อน", "เพื่อนต้องมีแอป Scriptable (ฟรี) แล้วสร้างสคริปต์ใหม่ → วางโค้ดติดตั้ง → กด ▶︎ ครั้งเดียว\nข้อมูลพอร์ตของคุณไม่ถูกแชร์ไปด้วย",
-    ["แชร์ข้อความ + โค้ดติดตั้ง", "คัดลอกเฉพาะโค้ดติดตั้ง"]);
-  if (i === 0) await ShareSheet.present([`🐱 Pixel Cat Portfolio — widget พอร์ตลงทุนกับแมวพิกเซล\n1) โหลดแอป Scriptable (ฟรี)\n2) เปิดแอป กด + สร้างสคริปต์ใหม่ แล้ววางโค้ดด้านล่าง\n3) กด ▶︎ ครั้งเดียว จะได้สคริปต์ "Pixel Cat Portfolio" ที่อัปเดตเองอัตโนมัติ\nรายละเอียด: ${REPO_URL}\n\n${INSTALLER}`]);
+    ["แชร์ข้อความ + โค้ดติดตั้ง (iPhone + Android)", "คัดลอกเฉพาะโค้ดติดตั้ง (iPhone)", "แชร์ลิงก์เว็บแอป (Android / คอม)"]);
+  if (i === 0) await ShareSheet.present([`🐱 Pixel Cat Portfolio — widget พอร์ตลงทุนกับแมวพิกเซล\n1) โหลดแอป Scriptable (ฟรี)\n2) เปิดแอป กด + สร้างสคริปต์ใหม่ แล้ววางโค้ดด้านล่าง\n3) กด ▶︎ ครั้งเดียว จะได้สคริปต์ "Pixel Cat Portfolio" ที่อัปเดตเองอัตโนมัติ\n📱 ใช้ Android / คอม: เปิด ${WEB_URL} แล้วกด ⋮ → เพิ่มลงหน้าจอหลัก\nรายละเอียด: ${REPO_URL}\n\n${INSTALLER}`]);
   else if (i === 1) { Pasteboard.copy(INSTALLER); await info("คัดลอกโค้ดติดตั้งแล้ว"); }
+  else if (i === 2) await ShareSheet.present([`🐱 Pixel Cat Portfolio (เว็บแอป Android / คอม)\n${WEB_URL}\nเปิดใน Chrome แล้วกด ⋮ → เพิ่มลงหน้าจอหลัก\nย้ายข้อมูลจาก iPhone: เมนู 💾 สำรอง → คัดลอก แล้ววางในเว็บแอป ⚙️ → นำเข้าข้อมูลสำรอง`]);
 }
 
 // ---------- ไฟล์ (ใช้ตำแหน่งเดิมจากเวอร์ชันแรก ข้อมูลจึงไม่หาย) ----------
@@ -178,6 +182,7 @@ async function readJSON(path, fallback) {
 function writeJSON(path, obj) { fm.writeString(path, JSON.stringify(obj, null, 1)); }
 
 // ---------- ตัวช่วยตัวเลข / วันที่ ----------
+// @shared-begin
 const num = (s) => { const n = parseFloat(String(s ?? "").replace(/,/g, "").trim()); return isFinite(n) ? n : NaN; };
 function fmt(n, d = 0) {
   if (!isFinite(n)) return "-";
@@ -206,6 +211,7 @@ const thDate = (d = new Date()) => `${d.getDate()} ${TH_MONTH[d.getMonth()]}`;
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const key = (type, sym) => `${type}:${sym}`;
 
+// @shared-end
 // ---------- SHA-256 / HMAC (สำหรับ Bitkub API แบบมี key) ----------
 function utf8(str) {
   const out = [];
@@ -367,6 +373,7 @@ async function fetchPrices(data) {
 }
 
 // ---------- คำนวณพอร์ต ----------
+// @shared-begin
 function compute(data, P) {
   const usdthb = P.fx ? P.fx.price : NaN;
   const usdPrev = P.fx ? P.fx.prev : NaN;
@@ -443,6 +450,7 @@ function compute(data, P) {
   };
 }
 
+// @shared-end
 async function saveHistory(S) {
   if (!(S.total > 0)) return [];
   const hist = await readJSON(F_HIST, []);
@@ -460,6 +468,7 @@ async function saveHistory(S) {
 // ---------- เวลาตลาด (อิงเวลาจริง ไม่ขึ้นกับ timezone ของเครื่อง) ----------
 // SET (เวลาไทย): Pre-open 09:30 · เช้า 10:00–12:30 · พัก 12:30–13:30 · Pre-open 13:30 · บ่าย 14:00–16:30 · Pre-close 16:30–16:40
 // NYSE/Nasdaq (เวลานิวยอร์ก): Pre-market 04:00 · ตลาด 09:30–16:00 · After-hours 16:00–20:00 (แปลงเป็นเวลาไทยอัตโนมัติ รวม Daylight Saving)
+// @shared-begin
 const SET_HOLIDAYS = new Set(["2026-01-01","2026-01-02","2026-03-03","2026-04-06","2026-04-13","2026-04-14","2026-04-15","2026-05-01","2026-05-04","2026-06-01","2026-06-03","2026-07-28","2026-07-29","2026-08-12","2026-10-13","2026-10-16","2026-10-23","2026-12-07","2026-12-10","2026-12-31"]);
 const US_HOLIDAYS = new Set(["2026-01-01","2026-01-19","2026-02-16","2026-04-03","2026-05-25","2026-06-19","2026-07-03","2026-09-07","2026-11-26","2026-12-25",
   "2027-01-01","2027-01-18","2027-02-15","2027-03-26","2027-05-31","2027-06-18","2027-07-05","2027-09-06","2027-11-25","2027-12-24"]);
@@ -602,6 +611,7 @@ function catAgeDays(hist) {
   return Math.max(1, Math.floor((Date.now() - first.getTime()) / 864e5) + 1);
 }
 
+// @shared-end
 // ---------- วาดภาพพิกเซล ----------
 const colorCache = {};
 const col = (hex, a) => { const k = hex + (a ?? ""); return colorCache[k] || (colorCache[k] = a == null ? new Color(hex) : new Color(hex, a)); };
@@ -713,6 +723,7 @@ function pixelDonut(S, cells = 26, px = 6, ink = "#2B1A12") {
   }
   return dc.getImage();
 }
+// @shared-begin
 function allocBlocks(values, n) {
   const total = values.reduce((s, v) => s + v, 0);
   if (!(total > 0)) return values.map(() => 0);
@@ -723,6 +734,7 @@ function allocBlocks(values, n) {
   values.forEach((v, i) => { if (v > 0 && out[i] === 0) { const j = out.indexOf(Math.max(...out)); out[j]--; out[i]++; } });
   return out;
 }
+// @shared-end
 function blockBar(blocks, n, w, h, emptyHex = "#888888") {
   // blocks: [{count, color}] → แถบบล็อกแบบเกม
   const gap = Math.max(2, Math.round(w / n * 0.18));
@@ -815,6 +827,7 @@ function lockBar(S, hist, settings) {
   return blockBar(CAT_ORDER.map((c, i) => ({ count: counts[i], color: lum[i] })), 20, 300, 14);
 }
 
+// @shared-begin
 // ===== Pixel cat engine: side-view poses + room scene (shared by widget & in-app animation) =====
 function makeCatEngine(SPR) {
   const TAU = Math.PI * 2;
@@ -1168,6 +1181,7 @@ function makeCatEngine(SPR) {
 
   return { catCells, renderScene, POSES, W, H, PROPS };
 }
+// @shared-end
 const CAT_ENGINE = makeCatEngine(SPR);
 // วาดฉากห้องแมวเป็นภาพสำหรับ widget (widget ขยับเองไม่ได้ จึงเปลี่ยนท่า/ตำแหน่งทุกครั้งที่รีเฟรช)
 function sceneImage(S, act, settings, wPt, hPt, ptPerCell = 2) {
@@ -1640,6 +1654,7 @@ else{$('line').remove();$('histNote').textContent='แมวจะจดมู�
 </script></body></html>`;
 }
 
+// @shared-begin
 // ---------- นำเข้าจากรูปด้วย AI ----------
 const AI_PROMPT = `คุณคือผู้ช่วยอ่านภาพหน้าจอพอร์ตการลงทุน (เช่น แอป Dime, Bitkub, แอปหุ้น, แอปทอง)
 อ่าน "ทุกรูป" ที่แนบมา แล้วสรุปสินทรัพย์ที่ถืออยู่ทุกตัว
@@ -1703,6 +1718,7 @@ function parseAI(text) {
     return out;
   });
 }
+// @shared-end
 async function aiImportFlow(data) {
   const i = await ask("📸 นำเข้าจากรูปด้วย AI",
     "1) คัดลอก Prompt\n2) เปิด ChatGPT / Claude / Gemini วาง Prompt + แนบรูปแคปพอร์ตกี่รูปก็ได้\n3) คัดลอกคำตอบของ AI แล้วกลับมากดข้อ 2",

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Pixel Cat Portfolio</title>
+<meta name="description" content="พอร์ตหุ้นไทย หุ้นต่างประเทศ กองทุน คริปโต ทอง พร้อมแมวพิกเซล">
+<meta name="theme-color" content="#F4E9D2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1D1A2F" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F4E9D2;--card:#FFF8E8;--ink:#3B2418;--text:#3B2418;--sub:#8A6E57;--up:#1E8A43;--down:#C9303C;--bubble:#FFFFFF;--grid:rgba(59,36,24,.12);--field:#FFFDF6;--accent:#FFD84A}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#1D1A2F;--card:#2A2542;--ink:#0B0816;--text:#F3EAD7;--sub:#A79CC8;--up:#5BE38A;--down:#FF6B7A;--bubble:#352F55;--grid:rgba(255,255,255,.08);--field:#221E38}}
+:root[data-theme=dark]{--bg:#1D1A2F;--card:#2A2542;--ink:#0B0816;--text:#F3EAD7;--sub:#A79CC8;--up:#5BE38A;--down:#FF6B7A;--bubble:#352F55;--grid:rgba(255,255,255,.08);--field:#221E38}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.45 'IBM Plex Sans Thai',-apple-system,'Segoe UI',sans-serif;font-variant-numeric:tabular-nums;
+  background-image:radial-gradient(var(--grid) 1px,transparent 1px);background-size:8px 8px;min-height:100vh;padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+main{max-width:560px;margin:0 auto;padding:14px 16px 8px}
+h1,h2,.pix{font-family:'Pixelify Sans','IBM Plex Sans Thai',sans-serif;font-weight:700;letter-spacing:.3px}
+h2{font-size:16px;margin:0 0 10px}
+.card{background:var(--card);border:3px solid var(--ink);box-shadow:4px 4px 0 var(--ink);padding:14px;margin-bottom:16px}
+.top{display:flex;align-items:center;justify-content:space-between;margin:2px 0 12px}
+.top h1{font-size:19px;margin:0}
+.ver{font-size:11px;color:var(--sub)}
+.btn{font:600 14px 'IBM Plex Sans Thai',sans-serif;color:var(--text);background:var(--card);border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);padding:8px 12px;cursor:pointer;min-height:44px}
+.btn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--ink)}
+.btn.pri{background:var(--accent);color:#3B2418}
+.btn.sm{min-height:36px;padding:5px 10px;font-size:13px}
+.btn.danger{color:var(--down)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.scene{display:block;width:100%;image-rendering:pixelated;border:3px solid var(--ink);background:#F1DFC2;touch-action:manipulation;cursor:pointer}
+.say{position:relative;background:var(--bubble);border:3px solid var(--ink);padding:9px 12px;margin-top:10px;font-weight:600;min-height:24px}
+.name{font-weight:700;margin-top:10px}.sub{color:var(--sub);font-size:12.5px}
+.lcd{background:#221E38;border:3px solid #0B0816;padding:12px 14px;color:#FFE38A;margin-top:12px}
+.lcd .lab{font:700 11px 'Pixelify Sans',monospace;color:#8E84C6;display:flex;justify-content:space-between}
+.lcd .big{font:700 32px 'Pixelify Sans',monospace;text-shadow:3px 3px 0 #6B4E1A;margin:4px 0 2px;letter-spacing:1px;overflow-wrap:anywhere}
+.lcd .pl{font-weight:600;font-size:15px}
+.lcd .u{color:#6BF08F}.lcd .d{color:#FF7A85}
+.up{color:var(--up)}.down{color:var(--down)}
+.mk{display:flex;flex-direction:column;gap:4px;font-size:13px;margin-top:10px}
+.dot{display:inline-block;width:10px;height:10px;border:2px solid var(--ink);margin-right:6px;vertical-align:-1px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.k{border:2px solid var(--ink);padding:8px;background:var(--bg)}.k b{display:block;font-size:16px}
+.dn{display:flex;gap:14px;align-items:center}
+.dn canvas{image-rendering:pixelated;width:132px;height:132px;flex:none}
+.leg{flex:1;min-width:0}
+.li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:2px dashed var(--grid);font-size:14px}
+.li:last-child{border:0}
+.sq{width:11px;height:11px;border:2px solid var(--ink);display:inline-block;margin-right:6px;vertical-align:-1px;flex:none}
+.hold{padding:10px 0;border-top:2px dashed var(--grid);cursor:pointer}.hold:first-child{border-top:0}
+.r1{display:flex;justify-content:space-between;gap:8px;font-weight:700}
+.r2{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--sub);margin-top:2px}
+.tag{font-size:11px;font-weight:500;padding:0 5px;border:2px solid var(--ink);margin-left:6px;color:var(--sub);white-space:nowrap}
+.tag.warn{color:var(--down)}
+.empty{text-align:center;padding:18px 6px;color:var(--sub)}
+.exp{display:flex;gap:3px;margin-top:6px}.exp i{flex:1;height:12px;border:2px solid var(--ink)}.exp i.on{background:var(--accent)}
+nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:3px solid var(--ink);display:flex;justify-content:center;padding-bottom:env(safe-area-inset-bottom);z-index:5}
+nav.tabs button{flex:1;max-width:140px;background:none;border:0;color:var(--sub);font:600 12px 'IBM Plex Sans Thai',sans-serif;padding:8px 2px 9px;min-height:60px;cursor:pointer}
+nav.tabs button span{display:block;font-size:20px;line-height:1.2}
+nav.tabs button[aria-selected=true]{color:var(--text);background:var(--bg)}
+section[hidden]{display:none}
+label{display:block;font-size:13px;font-weight:600;margin:10px 0 4px}
+input,select,textarea{width:100%;font:15px 'IBM Plex Sans Thai',sans-serif;color:var(--text);background:var(--field);border:2px solid var(--ink);padding:10px;border-radius:0}
+textarea{min-height:120px;font-size:13px;font-family:ui-monospace,Menlo,monospace}
+dialog{border:3px solid var(--ink);box-shadow:5px 5px 0 var(--ink);background:var(--card);color:var(--text);padding:16px;width:min(520px,calc(100vw - 24px));max-height:88vh;overflow:auto}
+dialog::backdrop{background:rgba(20,14,30,.55)}
+dialog h2{margin-bottom:4px}
+.acts{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.toast{position:fixed;left:50%;bottom:calc(88px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#221E38;color:#FFE38A;border:3px solid #0B0816;padding:10px 14px;font-weight:600;z-index:20;max-width:90vw;display:none}
+canvas.hist{width:100%;height:150px;image-rendering:pixelated;display:block}
+.hint{font-size:12.5px;color:var(--sub);margin-top:6px}
+a{color:inherit}
+</style>
+</head>
+<body>
+<main>
+  <div class="top"><h1>🐱 Pixel Cat Portfolio</h1><span class="ver" id="ver"></span></div>
+
+  <section id="tab-home">
+    <div class="card">
+      <canvas class="scene" id="room" aria-label="ห้องแมว แตะเพื่อเล่นกับแมว"></canvas>
+      <div class="say" id="say"></div>
+      <div class="name" id="catname"></div>
+      <div class="lcd" id="lcd"></div>
+      <div class="mk" id="mk"></div>
+      <div id="goal"></div>
+      <div class="sub" id="pricenote" style="margin-top:8px"></div>
+    </div>
+    <div class="card" id="mixcard"><h2>■ สัดส่วนพอร์ต</h2><div class="dn"><canvas id="donut" width="156" height="156"></canvas><div class="leg" id="legend"></div></div></div>
+    <div class="card" id="movecard"><h2>■ วันนี้</h2><div id="moves"></div></div>
+  </section>
+
+  <section id="tab-port" hidden>
+    <div class="card">
+      <div class="row" style="justify-content:space-between"><h2 style="margin:0">■ ช่องเก็บของ</h2><button class="btn pri sm" id="addBtn">➕ เพิ่ม</button></div>
+      <div id="holds" style="margin-top:8px"></div>
+    </div>
+  </section>
+
+  <section id="tab-chart" hidden>
+    <div class="card"><h2>■ มูลค่าพอร์ตย้อนหลัง</h2><canvas class="hist" id="hist"></canvas><div class="hint" id="histnote"></div></div>
+    <div class="card"><h2>■ ต้นทุน vs มูลค่า</h2><div id="cvv"></div></div>
+  </section>
+
+  <section id="tab-set" hidden>
+    <div class="card"><h2>■ 📸 นำเข้าจากรูปด้วย AI</h2>
+      <div class="sub">1) คัดลอก Prompt → 2) เปิด ChatGPT / Claude / Gemini วาง Prompt พร้อมแนบรูปแคปพอร์ตกี่รูปก็ได้ → 3) คัดลอกคำตอบมาวางด้านล่าง</div>
+      <div class="row" style="margin-top:10px"><button class="btn sm" id="copyPrompt">คัดลอก Prompt</button></div>
+      <label for="aiText">ผลลัพธ์จาก AI</label><textarea id="aiText" placeholder='{"portfolio_import":1,"items":[...]}'></textarea>
+      <div class="row" style="margin-top:10px"><button class="btn pri sm" id="aiImport">ตรวจและนำเข้า</button></div>
+    </div>
+    <div class="card"><h2>■ 🐱 แมวและธีม</h2>
+      <label for="sName">ชื่อแมว</label><input id="sName" maxlength="12">
+      <label for="sColor">พันธุ์ / สีแมว</label><select id="sColor"></select>
+      <label for="sTheme">ธีม</label><select id="sTheme"><option value="auto">อัตโนมัติ (ตามเครื่อง)</option><option value="light">กระดาษครีม (สว่าง)</option><option value="dark">ราตรีม่วง (มืด)</option></select>
+      <label for="sGoal">🎯 เป้าหมายพอร์ต (บาท, 0 = ปิด)</label><input id="sGoal" inputmode="decimal">
+      <div class="row" style="margin-top:12px"><button class="btn pri sm" id="saveSet">บันทึก</button></div>
+    </div>
+    <div class="card"><h2>■ 💾 สำรอง / ย้ายข้อมูล</h2>
+      <div class="sub">ใช้ย้ายข้อมูลระหว่าง iPhone (Scriptable) ↔ Android / คอม ได้ทั้งสองทาง · บน iPhone: เมนู 💾 สำรอง → คัดลอกข้อมูลไปคลิปบอร์ด</div>
+      <div class="row" style="margin-top:10px"><button class="btn sm" id="exportBtn">คัดลอกข้อมูลสำรอง</button><button class="btn sm" id="dlBtn">ดาวน์โหลดไฟล์</button></div>
+      <label for="impText">วางข้อมูลสำรองเพื่อกู้คืน</label><textarea id="impText"></textarea>
+      <div class="row" style="margin-top:10px"><button class="btn sm danger" id="impBtn">กู้คืน (แทนที่ข้อมูลปัจจุบัน)</button></div>
+    </div>
+    <div class="card"><h2>■ ℹ️ เกี่ยวกับ</h2>
+      <div class="sub" id="about"></div>
+      <div class="row" style="margin-top:10px"><button class="btn sm" id="installBtn" hidden>📲 ติดตั้งเป็นแอป</button><button class="btn sm" id="shareBtn">📤 แชร์ให้เพื่อน</button><button class="btn sm" id="sampleBtn">🧪 ข้อมูลตัวอย่าง</button></div>
+    </div>
+  </section>
+</main>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" data-tab="home" aria-selected="true"><span>🏠</span>หน้าหลัก</button>
+  <button role="tab" data-tab="port" aria-selected="false"><span>🎒</span>พอร์ต</button>
+  <button role="tab" data-tab="chart" aria-selected="false"><span>📈</span>กราฟ</button>
+  <button role="tab" data-tab="set" aria-selected="false"><span>⚙️</span>ตั้งค่า</button>
+</nav>
+
+<dialog id="dlg"><form method="dialog" id="dlgForm"></form></dialog>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="shared.js?v=__BUILD__"></script>
+<script src="app.js?v=__BUILD__"></script>
+</body>
+</html>
