@@ -523,10 +523,38 @@ function renderChart() {
 }
 
 // ---------- แท็บตั้งค่า ----------
+// ---------- เลือกแมว (มีรูปตัวอย่าง: หน้าตรง + ท่าเดิน ตัวที่เลือกเดินได้) ----------
+let pickTimer = null;
+function drawCatPreview(cv, breed, t) {
+  const front = catGrid("happy", breed), side = ENGINE.catCells("walk", t, ENGINE.breedOpts(breed));
+  const pal = Object.assign({}, SPR.fixed, SPR.palettes[breed] || SPR.palettes.orange);
+  const fw = front[0].length, sw = side[0].length, h = Math.max(front.length, side.length), px = 4;
+  cv.width = (fw + sw + 2) * px; cv.height = h * px;
+  const ctx = cv.getContext("2d"); ctx.clearRect(0, 0, cv.width, cv.height);
+  const draw = (g, ox, oy) => g.forEach((row, y) => row.forEach((c, x) => { if (c === "." || !pal[c]) return; ctx.fillStyle = pal[c]; ctx.fillRect((ox + x) * px, (oy + y) * px, px, px); }));
+  draw(front, 0, h - front.length);
+  draw(side, fw + 2, h - side.length);
+}
+function renderCatPicker() {
+  const box = $("catPick"), cur = data.settings.catColor;
+  box.innerHTML = Object.entries(CAT_COLORS).map(([k, v]) => `<button type="button" class="catopt" role="radio" aria-checked="${k === cur}" data-k="${k}"><canvas></canvas>${esc(v)}</button>`).join("");
+  box.querySelectorAll(".catopt").forEach((b) => {
+    drawCatPreview(b.querySelector("canvas"), b.dataset.k, 0.25);
+    b.onclick = () => {
+      data.settings.catColor = b.dataset.k; save(); refresh(); renderCatPicker();
+      toast("เปลี่ยนเป็น " + CAT_COLORS[b.dataset.k] + " แล้ว 🐱");
+    };
+  });
+  // ตัวที่เลือกเดินอยู่ในกล่อง
+  clearInterval(pickTimer);
+  const sel = box.querySelector('.catopt[aria-checked="true"] canvas');
+  let t = 0;
+  if (sel) pickTimer = setInterval(() => { if (!sel.isConnected || $("tab-set").hidden) return; t = (t + 0.125) % 1; drawCatPreview(sel, data.settings.catColor, t); }, 120);
+}
 function renderSet() {
   const st = data.settings;
   $("sName").value = st.catName;
-  $("sColor").innerHTML = Object.entries(CAT_COLORS).map(([k, v]) => `<option value="${k}" ${k === st.catColor ? "selected" : ""}>${v}</option>`).join("");
+  renderCatPicker();
   $("sTheme").value = st.theme;
   $("sGoal").value = st.goal || "";
   $("about").innerHTML = `เวอร์ชัน ${VERSION} · อัปเดตเองอัตโนมัติเมื่อเปิดแอป<br>ข้อมูลพอร์ตเก็บในเบราว์เซอร์เครื่องนี้เท่านั้น (ไม่ส่งขึ้นเซิร์ฟเวอร์) — ถ้าล้างข้อมูลเบราว์เซอร์ข้อมูลจะหาย ควรสำรองไว้เป็นระยะ<br>iPhone ใช้แบบ widget ได้ผ่านแอป Scriptable · <a href="${REPO_URL}" target="_blank" rel="noopener">GitHub</a>`;
@@ -535,7 +563,7 @@ function bindSet() {
   $("saveSet").onclick = () => {
     const st = data.settings;
     st.catName = ($("sName").value.trim() || "ส้มจี๊ด").slice(0, 12);
-    st.catColor = $("sColor").value; st.theme = $("sTheme").value;
+    st.theme = $("sTheme").value;
     const g = num($("sGoal").value); st.goal = g > 0 ? g : 0;
     save(); applyTheme(); refresh(); toast("บันทึกแล้ว 🐱");
   };

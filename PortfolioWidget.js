@@ -58,15 +58,27 @@ function looksLikeThaiFund(sym) {
   return false;
 }
 const TYPE_ORDER = ["thai", "us", "fund", "crypto", "gold"];
-const CAT_COLORS = { scottish: "สกอตทิชโฟลด์ ทับบี้", british: "บริติช น้ำตาลเข้ม", orange: "ส้มลายเสือ", gray: "เทาสลิด", black: "ดำตาเหลือง", white: "ขาวตาฟ้า", calico: "สามสี" };
+const CAT_COLORS = { siamese: "วิเชียรมาศ (สยาม)", scottish: "สกอตทิชโฟลด์ ทับบี้", british: "บริติช น้ำตาลเข้ม", orange: "ส้มลายเสือ", gray: "เทาสลิด", black: "ดำตาเหลือง", white: "ขาวตาฟ้า", calico: "สามสี" };
 const DEFAULT_SETTINGS = { catName: "ส้มจี๊ด", catColor: "orange", theme: "auto", goal: 0, fundInfo: {}, autoUpdate: true };
 
 // ---------- สไปรต์แมวพิกเซล ----------
-const SPR = {"base":["......................","..K..........K........",".KPK........KPK.......",".KPPK......KPPK.......","KOPPOKKKKKKOPPOK......","KOOOOODOODOOOOOK......","KOOOOOODDOOOOOOK......","KOOEEOOOOOOEEOOK......","KOOEWOOOOOOEWOOK......","KPOOOOLNNLOOOOPK......","KOOOOLKLLKLOOOOK......",".KOOOOLLLLOOOOK.......","..KKOOOOOOOOKK...KK...","..KOOOLLLLOOOK..KOOK..",".KOODLLLLLLDOOK..KOK..",".KOODLLLLLLDOOK.KOK...",".KOOOLLLLLLOOOKKOK....",".KLLKOOLLOOKLLKOOK....","ccKKKKKKKKKKKKKKKcc...","cCCCCCCCCCCCCCCCCCCc..",".cccccccccccccccccc..."],"eyes":{"normal":[["KOOEEOOOOOOEEOOK",7],["KOOEWOOOOOOWEOOK",8]],"happy":[["KOOKKOOOOOOKKOOK",7],["KOKOOKOOOOKOOKOK",8]],"sad":[["KOKOOOOOOOOOOKOK",6],["KOOKEOOOOOOEKOOK",7],["KOOEWOOOOOOWEOOK",8]],"sleep":[["KOOOOOOOOOOOOOOK",7],["KOKKKOOOOOOKKKOK",8]],"wow":[["KOOEEOODDOOEEOOK",6],["KOEEWOOOOOOEEWOK",7],["KOEEEOOOOOOEEEOK",8]]},"mouth":{"normal":["KOOOOLKLLKLOOOOK",10],"happy":["KOOOOLKLLKLOOOOK",10],"sad":["KOOOOLLKKLLOOOOK",10],"sleep":["KOOOOLLKKLLOOOOK",10],"wow":["KOOOOLLKKLLOOOOK",10]},"extra":{"sad":[[3,9,"B"],[3,10,"B"]],"wow":[[19,1,"Y"],[18,2,"Y"],[19,2,"W"],[20,2,"Y"],[17,3,"Y"],[18,3,"W"],[19,3,"W"],[20,3,"W"],[21,3,"Y"],[18,4,"Y"],[19,4,"W"],[20,4,"Y"],[19,5,"Y"]],"happy":[[17,3,"P"],[18,3,"P"],[20,3,"P"],[21,3,"P"],[17,4,"P"],[18,4,"P"],[19,4,"P"],[20,4,"P"],[21,4,"P"],[18,5,"P"],[19,5,"P"],[20,5,"P"],[19,6,"P"],[18,3,"W"]],"sleep":[[18,0,"Z"],[19,0,"Z"],[20,0,"Z"],[21,0,"Z"],[20,1,"Z"],[19,2,"Z"],[18,3,"Z"],[19,3,"Z"],[20,3,"Z"],[21,3,"Z"]]},"palettes":{"orange":{"K":"#3B2418","O":"#F59B42","D":"#C8681E","L":"#FFE3B8","P":"#FF8FA3","N":"#E85A7A","E":"#2A1A12","W":"#FFFFFF"},"gray":{"K":"#22252E","O":"#9AA3B2","D":"#6B7385","L":"#E9EDF3","P":"#FF9EB1","N":"#E2627F","E":"#14161C","W":"#FFFFFF"},"black":{"K":"#0E0E14","O":"#3A3A4A","D":"#2A2A36","L":"#5A5A70","P":"#FF8FA3","N":"#E85A7A","E":"#FFD84A","W":"#FFFFFF"},"white":{"K":"#4A3F3A","O":"#FFF8EE","D":"#F0DCC4","L":"#FFFFFF","P":"#FFA8B8","N":"#F07A93","E":"#3A6FD8","W":"#FFFFFF"},"calico":{"K":"#3A2418","O":"#FFF5E6","D":"#F28C38","L":"#FFFFFF","P":"#FF9EB1","N":"#E85A7A","E":"#2A1A12","W":"#FFFFFF"},"scottish":{"K":"#2E2620","O":"#9C8B74","D":"#55473A","L":"#FFFFFF","P":"#E9A0A8","N":"#C97B7B","E":"#1F2620","W":"#FFFFFF","G":"#93AE80"},"british":{"K":"#2A1A10","O":"#8A5A2E","D":"#5A3519","L":"#D9B88A","P":"#D9928A","N":"#B5655E","E":"#C7861A","W":"#FFF3D0"}},"fixed":{"C":"#E2464F","c":"#9E2A3A","B":"#5BC0FF","Y":"#FFD84A","Z":"#8FB8FF","G":"#93AE80"},"breeds":{"scottish":{"rows":{"1":"................","2":"................","3":".KKK........KKK.","4":"KODOKKKKKKKKODOK","5":"KOOOODODDODOOOOK","6":"KOOOOOODDOOOOOOK","14":".KODDLLLLLLDDOK.","15":".KOOOLLLLLLOOOK."},"eyes":{"normal":[["KOOGGOODDOOGGOOK",6],["KOGEWOOOOOOWEGOK",7],["KOGEEOOOOOOEEGOK",8]],"wow":[["KOGGGOODDOOGGGOK",6],["KOGEWOOOOOOWEGOK",7],["KOGEEOOOOOOEEGOK",8]]}},"british":{"rows":{"1":"................","2":"................","3":".KK..........KK.","4":"KPPKKKKKKKKKKPPK","5":"KOOOOOODDOOOOOOK","6":"KOOOOOOOOOOOOOOK"},"eyes":{"normal":[["KOOKKOOOOOOKKOOK",7],["KOOEEOOOOOOEEOOK",8]]}}}};
+const SPR = {"base":["......................","..K..........K........",".KPK........KPK.......",".KPPK......KPPK.......","KOPPOKKKKKKOPPOK......","KOOOOODOODOOOOOK......","KOOOOOODDOOOOOOK......","KOOEEOOOOOOEEOOK......","KOOEWOOOOOOEWOOK......","KPOOOOLNNLOOOOPK......","KOOOOLKLLKLOOOOK......",".KOOOOLLLLOOOOK.......","..KKOOOOOOOOKK...KK...","..KOOOLLLLOOOK..KOOK..",".KOODLLLLLLDOOK..KOK..",".KOODLLLLLLDOOK.KOK...",".KOOOLLLLLLOOOKKOK....",".KLLKOOLLOOKLLKOOK....","ccKKKKKKKKKKKKKKKcc...","cCCCCCCCCCCCCCCCCCCc..",".cccccccccccccccccc..."],"eyes":{"normal":[["KOOEEOOOOOOEEOOK",7],["KOOEWOOOOOOWEOOK",8]],"happy":[["KOOKKOOOOOOKKOOK",7],["KOKOOKOOOOKOOKOK",8]],"sad":[["KOKOOOOOOOOOOKOK",6],["KOOKEOOOOOOEKOOK",7],["KOOEWOOOOOOWEOOK",8]],"sleep":[["KOOOOOOOOOOOOOOK",7],["KOKKKOOOOOOKKKOK",8]],"wow":[["KOOEEOODDOOEEOOK",6],["KOEEWOOOOOOEEWOK",7],["KOEEEOOOOOOEEEOK",8]]},"mouth":{"normal":["KOOOOLKLLKLOOOOK",10],"happy":["KOOOOLKLLKLOOOOK",10],"sad":["KOOOOLLKKLLOOOOK",10],"sleep":["KOOOOLLKKLLOOOOK",10],"wow":["KOOOOLLKKLLOOOOK",10]},"extra":{"sad":[[3,9,"B"],[3,10,"B"]],"wow":[[19,1,"Y"],[18,2,"Y"],[19,2,"W"],[20,2,"Y"],[17,3,"Y"],[18,3,"W"],[19,3,"W"],[20,3,"W"],[21,3,"Y"],[18,4,"Y"],[19,4,"W"],[20,4,"Y"],[19,5,"Y"]],"happy":[[17,3,"P"],[18,3,"P"],[20,3,"P"],[21,3,"P"],[17,4,"P"],[18,4,"P"],[19,4,"P"],[20,4,"P"],[21,4,"P"],[18,5,"P"],[19,5,"P"],[20,5,"P"],[19,6,"P"],[18,3,"W"]],"sleep":[[18,0,"Z"],[19,0,"Z"],[20,0,"Z"],[21,0,"Z"],[20,1,"Z"],[19,2,"Z"],[18,3,"Z"],[19,3,"Z"],[20,3,"Z"],[21,3,"Z"]]},"palettes":{"orange":{"K":"#3B2418","O":"#F59B42","D":"#C8681E","L":"#FFE3B8","P":"#FF8FA3","N":"#E85A7A","E":"#2A1A12","W":"#FFFFFF"},"gray":{"K":"#22252E","O":"#9AA3B2","D":"#6B7385","L":"#E9EDF3","P":"#FF9EB1","N":"#E2627F","E":"#14161C","W":"#FFFFFF"},"black":{"K":"#0E0E14","O":"#3A3A4A","D":"#2A2A36","L":"#5A5A70","P":"#FF8FA3","N":"#E85A7A","E":"#FFD84A","W":"#FFFFFF"},"white":{"K":"#4A3F3A","O":"#FFF8EE","D":"#F0DCC4","L":"#FFFFFF","P":"#FFA8B8","N":"#F07A93","E":"#3A6FD8","W":"#FFFFFF"},"calico":{"K":"#3A2418","O":"#FFF5E6","D":"#F28C38","L":"#FFFFFF","P":"#FF9EB1","N":"#E85A7A","E":"#2A1A12","W":"#FFFFFF"},"scottish":{"K":"#2E2620","O":"#9C8B74","D":"#55473A","L":"#FFFFFF","P":"#E9A0A8","N":"#C97B7B","E":"#1F2620","W":"#FFFFFF","G":"#93AE80"},"british":{"K":"#2A1A10","O":"#8A5A2E","D":"#5A3519","L":"#D9B88A","P":"#D9928A","N":"#B5655E","E":"#C7861A","W":"#FFF3D0"},"siamese":{"K":"#2B1D15","O":"#F1E2C6","D":"#4A3326","L":"#4A3326","M":"#FBF3E3","P":"#FF9EB1","N":"#1E140E","E":"#3D7FE0","W":"#FFFFFF","G":"#93AE80"}},"fixed":{"C":"#E2464F","c":"#9E2A3A","B":"#5BC0FF","Y":"#FFD84A","Z":"#8FB8FF","G":"#93AE80"},"breeds":{"scottish":{"rows":{"1":"................","2":"................","3":".KKK........KKK.","4":"KODOKKKKKKKKODOK","5":"KOOOODODDODOOOOK","6":"KOOOOOODDOOOOOOK","14":".KODDLLLLLLDDOK.","15":".KOOOLLLLLLOOOK."},"eyes":{"normal":[["KOOGGOODDOOGGOOK",6],["KOGEWOOOOOOWEGOK",7],["KOGEEOOOOOOEEGOK",8]],"wow":[["KOGGGOODDOOGGGOK",6],["KOGEWOOOOOOWEGOK",7],["KOGEEOOOOOOEEGOK",8]]}},"british":{"rows":{"1":"................","2":"................","3":".KK..........KK.","4":"KPPKKKKKKKKKKPPK","5":"KOOOOOODDOOOOOOK","6":"KOOOOOOOOOOOOOOK"},"eyes":{"normal":[["KOOKKOOOOOOKKOOK",7],["KOOEEOOOOOOEEOOK",8]]}},"siamese":{"rows":{"5":"KOOOOOOOOOOOOOOK","6":"KOOOOOOOOOOOOOOK"},"post":{"2":"_DD_________DD_","3":"_DDD_______DDD_","4":"__DD________DD__","9":"_O__DDD__DDD__O_","13":"______MMMM_______DD___","14":"_____MMMMMM_______D___","15":"_____MMMMMM______D____","16":"_____MMMMMM_____D_____","17":"_______________DD_____","7":"______DDDD______","8":"_____DDDDDD_____"}}}};
+// สไปรต์หน้าตรง: base → แถวเฉพาะพันธุ์ → ตา/ปาก/ของประกอบตามอารมณ์ → post (ลายเฉพาะพันธุ์ที่ต้องทับทีหลัง เช่น หน้ากากวิเชียรมาศ, "_" = คงเดิม)
+function catGrid(mood, breed) {
+  const g = SPR.base.map((r) => r.split(""));
+  const B = (SPR.breeds || {})[breed] || {};
+  for (const [i, row] of Object.entries(B.rows || {})) for (let x = 0; x < row.length; x++) g[+i][x] = row[x];
+  for (const [row, i] of ((B.eyes || {})[mood] || SPR.eyes[mood])) for (let x = 0; x < row.length; x++) g[i][x] = row[x];
+  const [m, mi] = SPR.mouth[mood];
+  for (let x = 0; x < m.length; x++) g[mi][x] = m[x];
+  for (const [x, y, c] of SPR.extra[mood] || []) g[y][x] = c;
+  for (const [i, row] of Object.entries(B.post || {})) for (let x = 0; x < row.length && x < g[+i].length; x++) if (row[x] !== "_") g[+i][x] = row[x];
+  return g;
+}
 // @shared-end
 
 // ---------- เวอร์ชัน & อัปเดตอัตโนมัติ ----------
-const VERSION = "6.4.0";
+const VERSION = "6.4.1";
 const REPO = "perykung-alt/pixel-cat-portfolio";
 const UPDATE_BASE = `https://raw.githubusercontent.com/${REPO}/main/`;
 const REPO_URL = `https://github.com/${REPO}`;
@@ -657,16 +669,6 @@ function newCtx(w, h) {
   dc.setFillColor(new Color("#000000", 0.01)); dc.fillRect(new Rect(0, 0, 1, 1));
   return dc;
 }
-function catGrid(mood, breed) {
-  const g = SPR.base.map((r) => r.split(""));
-  const B = (SPR.breeds || {})[breed] || {};
-  for (const [i, row] of Object.entries(B.rows || {})) for (let x = 0; x < row.length; x++) g[+i][x] = row[x];
-  for (const [row, i] of ((B.eyes || {})[mood] || SPR.eyes[mood])) for (let x = 0; x < row.length; x++) g[i][x] = row[x];
-  const [m, mi] = SPR.mouth[mood];
-  for (let x = 0; x < m.length; x++) g[mi][x] = m[x];
-  for (const [x, y, c] of SPR.extra[mood] || []) g[y][x] = c;
-  return g;
-}
 function catImage(mood, palName, px = 10, faceOnly = false) {
   let g = catGrid(mood, palName);
   if (faceOnly) g = g.slice(1, 13).map((r) => r.slice(0, 16));
@@ -1007,7 +1009,7 @@ function makeCatEngine(SPR) {
     for (let i = 0; i < P.tail.length - 1; i++) {
       const [a, b] = [P.tail[i], P.tail[i + 1]];
       const th = lerp(1.15, 0.85, i / Math.max(1, P.tail.length - 2));
-      each((x, y, cx, cy) => { if (segDist(cx, cy, a[0], a[1], b[0], b[1]) <= th) set(x, y, i === P.tail.length - 2 ? "D" : "O"); });
+      each((x, y, cx, cy) => { if (segDist(cx, cy, a[0], a[1], b[0], b[1]) <= th) set(x, y, opts.points || i === P.tail.length - 2 ? "D" : "O"); });
     }
     // body
     const bodies = [P.body].concat(P.extra || []);
@@ -1016,12 +1018,12 @@ function makeCatEngine(SPR) {
         const belly = cy > P.body.y + P.body.ry * 0.35 && Math.abs(P.body.rot) < 0.5;
         const chest = Math.abs(P.body.rot) >= 0.5 && cx > P.body.x + 0.8;
         const stripe = (Math.floor(cx + cy * 0.25) % 4 === 0) && cy < P.body.y + 0.5;
-        set(x, y, belly || chest ? "L" : stripe ? "D" : "O");
+        set(x, y, belly || chest ? (opts.points ? "M" : "L") : stripe && !opts.points ? "D" : "O");
       }
     });
     // near legs (+ white paws)
     for (const L of P.legs.filter((l) => !l.far)) each((x, y, cx, cy) => {
-      if (segDist(cx, cy, L.a[0], L.a[1], L.b[0], L.b[1]) <= lw / 2) set(x, y, Math.hypot(cx - L.b[0], cy - L.b[1]) < 1.3 ? "L" : "O");
+      if (segDist(cx, cy, L.a[0], L.a[1], L.b[0], L.b[1]) <= lw / 2) set(x, y, opts.points ? "D" : Math.hypot(cx - L.b[0], cy - L.b[1]) < 1.3 ? "L" : "O");
     });
     // head + ears
     const h = P.head, r = h.r, ear = opts.ears || P.ears || "up";
@@ -1034,10 +1036,10 @@ function makeCatEngine(SPR) {
     each((x, y, cx, cy) => {
       for (const e of ears) if (inTri(cx, cy, e[0], e[1], e[2])) {
         const c = [(e[0][0] + e[1][0] + e[2][0]) / 3, (e[0][1] + e[1][1] + e[2][1]) / 3];
-        set(x, y, ear !== "fold" && Math.hypot(cx - c[0], cy - c[1]) < earH * 0.38 ? "P" : ear === "fold" ? "D" : "O");
+        set(x, y, opts.points ? "D" : ear !== "fold" && Math.hypot(cx - c[0], cy - c[1]) < earH * 0.38 ? "P" : ear === "fold" ? "D" : "O");
       }
       if (Math.hypot(cx - h.x, cy - h.y) <= r) {
-        const muzzle = cx > h.x + r * 0.05 && cy > h.y + r * 0.2;
+        const muzzle = opts.points ? cx > h.x - r * 0.25 && cy > h.y - r * 0.45 : cx > h.x + r * 0.05 && cy > h.y + r * 0.2;
         const brow = opts.tabby !== false && cy < h.y - r * 0.45 && Math.floor(cx) % 2 === 0;
         set(x, y, muzzle ? "L" : brow ? "D" : "O");
       }
@@ -1075,6 +1077,7 @@ function makeCatEngine(SPR) {
     if (name === "scottish") return { ears: "fold", iris: true };
     if (name === "british") return { ears: "small", tabby: false };
     if (name === "white" || name === "black") return { tabby: false };
+    if (name === "siamese") return { tabby: false, points: true }; // วิเชียรมาศ: หน้า หู ขา หาง สีเข้ม
     return {};
   }
 
@@ -1209,7 +1212,7 @@ function makeCatEngine(SPR) {
     return { catX, face };
   }
 
-  return { catCells, renderScene, POSES, W, H, PROPS };
+  return { catCells, renderScene, breedOpts, catPalette, POSES, W, H, PROPS };
 }
 // @shared-end
 const CAT_ENGINE = makeCatEngine(SPR);
@@ -2033,17 +2036,46 @@ async function bitkubFlow() {
   catch (e) { await info("บันทึกแล้ว แต่เชื่อมต่อไม่สำเร็จ", String(e.message || e)); }
 }
 
+// รูปตัวอย่างแมว: หน้าตรง + ท่าเดินด้านข้าง (ใช้ในหน้าเลือกแมว)
+function catPreviewImage(breed, px = 5) {
+  const front = catGrid("happy", breed), side = CAT_ENGINE.catCells("walk", 0.25, CAT_ENGINE.breedOpts(breed));
+  const pal = Object.assign({}, SPR.fixed, SPR.palettes[breed] || SPR.palettes.orange);
+  const fw = front[0].length, sw = side[0].length, h = Math.max(front.length, side.length);
+  const dc = newCtx((fw + sw + 2) * px, h * px);
+  const draw = (g, ox, oy) => g.forEach((row, y) => row.forEach((c, x) => {
+    if (c === "." || !pal[c]) return;
+    dc.setFillColor(col(pal[c])); dc.fillRect(new Rect((ox + x) * px, (oy + y) * px, px, px));
+  }));
+  draw(front, 0, h - front.length);
+  draw(side.map((r) => (Array.isArray(r) ? r : r.split(""))), fw + 2, h - side.length);
+  return dc.getImage();
+}
+async function pickCat(current) {
+  const t = new UITable(); t.showSeparators = true;
+  let chosen = null;
+  const hdr = new UITableRow(); hdr.isHeader = true; hdr.height = 56;
+  hdr.addText("🐱 เลือกแมว", "แตะตัวที่ชอบ · ✓ = ตัวที่ใช้อยู่"); t.addRow(hdr);
+  for (const k of Object.keys(CAT_COLORS)) {
+    const r = new UITableRow(); r.height = 104; r.dismissOnSelect = true;
+    const im = r.addImage(catPreviewImage(k)); im.widthWeight = 58;
+    const tx = r.addText((k === current ? "✓ " : "") + CAT_COLORS[k], k === current ? "ตัวที่ใช้อยู่" : ""); tx.widthWeight = 42;
+    tx.titleFont = Font.boldRoundedSystemFont(15);
+    r.onSelect = () => { chosen = k; };
+    t.addRow(r);
+  }
+  await t.present(false);
+  return chosen;
+}
 async function catFlow(data) {
   const st = data.settings;
-  const i = await ask("🐱 ตั้งค่าแมว", `ชื่อ: ${st.catName} · สี: ${CAT_COLORS[st.catColor]}`, ["ตั้งชื่อแมว", "เปลี่ยนสีแมว", "ธีม widget"]);
+  const i = await ask("🐱 ตั้งค่าแมว", `ชื่อ: ${st.catName} · สี: ${CAT_COLORS[st.catColor]}`, ["ตั้งชื่อแมว", "เลือกพันธุ์ / สีแมว (มีรูปตัวอย่าง)", "ธีม widget"]);
   if (i === 0) {
     const a = new Alert(); a.title = "ชื่อแมว"; a.addTextField("ชื่อ", st.catName);
     a.addAction("บันทึก"); a.addCancelAction("ยกเลิก");
     if ((await a.presentAlert()) === 0 && a.textFieldValue(0).trim()) st.catName = a.textFieldValue(0).trim().slice(0, 12);
   } else if (i === 1) {
-    const keys = Object.keys(CAT_COLORS);
-    const j = await ask("เลือกสีแมว", null, keys.map((k) => (k === st.catColor ? "✓ " : "") + CAT_COLORS[k]));
-    if (j >= 0) st.catColor = keys[j];
+    const k = await pickCat(st.catColor);
+    if (k) st.catColor = k;
   } else if (i === 2) {
     const modes = [["auto", "อัตโนมัติ (ตามโหมดมืด/สว่าง)"], ["light", "กระดาษครีม (สว่าง)"], ["dark", "ราตรีม่วง (มืด)"]];
     const j = await ask("ธีม widget", null, modes.map(([k, n]) => (k === st.theme ? "✓ " : "") + n));

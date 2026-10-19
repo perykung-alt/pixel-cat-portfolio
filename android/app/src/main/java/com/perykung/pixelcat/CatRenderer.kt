@@ -36,6 +36,13 @@ object CatRenderer {
                 if (y in g.indices && x in g[y].indices) g[y][x] = e.getString(2)[0]
             }
         }
+        // ลายเฉพาะพันธุ์ที่ทับหลังสุด (เช่น หน้ากากวิเชียรมาศ) "_" = คงเดิม
+        b?.optJSONObject("post")?.let { rows ->
+            for (k in rows.keys()) {
+                val y = k.toInt(); val row = rows.getString(k)
+                if (y in g.indices) for (x in row.indices) if (x < g[y].size && row[x] != '_') g[y][x] = row[x]
+            }
+        }
         return g
     }
 
