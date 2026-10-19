@@ -3,7 +3,7 @@
 // icon-color: orange; icon-glyph: cat;
 /*
  * ==========================================================
- *  PIXEL CAT PORTFOLIO  v6.1  — หุ้นไทย / หุ้นต่างประเทศ / กองทุนรวม / คริปโต / ทองคำ
+ *  PIXEL CAT PORTFOLIO  v6.2  — หุ้นไทย / หุ้นต่างประเทศ / กองทุนรวม / คริปโต / ทองคำ
  *  สำหรับแอป Scriptable (iOS) · widget เล็ก / กลาง / ใหญ่ / ล็อกสกรีน
  * ----------------------------------------------------------
  *  อัปเดตอัตโนมัติ: สคริปต์เช็กเวอร์ชันใหม่จาก GitHub เอง (ทุก 6 ชม.) แล้วเขียนทับตัวเอง
@@ -66,7 +66,7 @@ const SPR = {"base":["......................","..K..........K........",".KPK....
 // @shared-end
 
 // ---------- เวอร์ชัน & อัปเดตอัตโนมัติ ----------
-const VERSION = "6.1.0";
+const VERSION = "6.2.0";
 const REPO = "perykung-alt/pixel-cat-portfolio";
 const UPDATE_BASE = `https://raw.githubusercontent.com/${REPO}/main/`;
 const REPO_URL = `https://github.com/${REPO}`;
@@ -1660,27 +1660,34 @@ const AI_PROMPT = `คุณคือผู้ช่วยอ่านภาพ�
 อ่าน "ทุกรูป" ที่แนบมา แล้วสรุปสินทรัพย์ที่ถืออยู่ทุกตัว
 ตอบกลับเป็น JSON อย่างเดียว ในโค้ดบล็อกเดียว ห้ามมีคำอธิบายอื่น รูปแบบนี้:
 
-{"portfolio_import":1,"items":[
- {"type":"thai","symbol":"PTT","qty":500,"avg":32.75,"currency":"THB","date":null,"nav":null,"region":null},
- {"type":"fund","symbol":"KKP US500-UH-E","qty":10263.9308,"avg":11.69,"currency":"THB","date":null,"nav":13.94,"region":"foreign"}
+{"portfolio_import":2,"items":[
+ {"type":"thai","symbol":"PTT","qty":500,"avg":32.75,"value":null,"cost":null,"pl":null,"plPct":null,"currency":"THB","date":null,"nav":null,"region":null},
+ {"type":"us","symbol":"PLTR","qty":null,"avg":null,"value":329.00,"cost":null,"pl":58.35,"plPct":21.56,"currency":"USD","date":null,"nav":null,"region":null},
+ {"type":"fund","symbol":"KKP US500-UH-E","qty":10263.9308,"avg":11.69,"value":null,"cost":null,"pl":null,"plPct":null,"currency":"THB","date":null,"nav":13.94,"region":"foreign"}
 ]}
 
 กติกา:
 - type (จัดหมวดตาม "สิ่งที่ถือจริง" อย่างเคร่งครัด):
   "thai" = หุ้นสามัญที่จดทะเบียนใน SET/mai เท่านั้น
-  "us" = หุ้นหรือ ETF ที่ซื้อตรงในตลาดต่างประเทศ ราคาและต้นทุนเป็น USD (เช่น หมวดหุ้นอเมริกาใน Dime: VOO, AAPL)
-  "fund" = กองทุนรวมที่จดทะเบียนในไทยทุกกอง (ซื้อเป็น "หน่วย" มี NAV เป็นบาท) รวมถึงกองที่ไปลงทุนหุ้นต่างประเทศ/Feeder Fund/กองดัชนี S&P500 เช่น KKP US500-UH-E, K-USA-A(A), SCBS&P500 → ห้ามใส่เป็น "us"
+  "us" = หุ้นหรือ ETF ที่ซื้อตรงในตลาดต่างประเทศ ราคาเป็น USD (เช่น แท็บ "หุ้นสหรัฐฯ" ใน Dime: VOO, AAPL, PLTR)
+  "fund" = กองทุนรวมที่จดทะเบียนในไทยทุกกอง (ซื้อเป็น "หน่วย" มี NAV เป็นบาท) รวมถึงกองที่ไปลงทุนหุ้นต่างประเทศ/Feeder Fund/กองดัชนี S&P500 เช่น KKP US500-UH-E, K-USA-A(A) → ห้ามใส่เป็น "us"
   "crypto" = คริปโต | "gold" = ทองคำ
-- region: เฉพาะ type "fund" ใส่ "foreign" ถ้ากองนั้นลงทุนต่างประเทศ (Feeder/FIF/ชื่อมี US, GLOBAL, CHINA, S&P, NASDAQ ฯลฯ) "thai" ถ้าลงทุนหุ้นไทย "mixed" ถ้าผสม ไม่แน่ใจใส่ null
-- symbol: ชื่อย่อตามที่แสดงในแอป หุ้นไทยไม่ต้องมี .BK / คริปโตใช้ชื่อเหรียญ เช่น BTC / กองทุนใช้ชื่อย่อเต็มตรงตามแอป รวมเว้นวรรคและคลาส เช่น KKP US500-UH-E / ทองใช้ "HSH"
-- qty: จำนวนที่ถือ (หุ้น / หน่วย / เหรียญ) ทองให้เป็น "บาททอง" ถ้าภาพเป็นกรัมให้หารด้วย 15.244
-- avg: ต้นทุนเฉลี่ยต่อ 1 หุ้น/หน่วย/เหรียญ/บาททอง ถ้าภาพมีแต่ต้นทุนรวม ให้ใช้ ต้นทุนรวม ÷ qty
-- currency: สกุลเงินของ avg คือ "USD" หรือ "THB"
+- symbol: ticker ตามที่แสดงในแอป ตรวจทีละตัวอักษร ระวังตัวที่หน้าตาคล้ายกัน (Q/G/O/0, I/l/1, S/5, B/8) ticker ต้องเป็นสัญลักษณ์จริงที่ซื้อขายในตลาด
+  หุ้นไทยไม่ต้องมี .BK / คริปโตใช้ชื่อเหรียญ เช่น BTC / กองทุนใช้ชื่อเต็มตรงตามแอป รวมเว้นวรรคและคลาส เช่น KKP US500-UH-E / ทองใช้ "HSH"
+- qty: จำนวนที่ถือ (หุ้น / หน่วย / เหรียญ) ทองเป็น "บาททอง" (ถ้าภาพเป็นกรัม ให้หารด้วย 15.244)
+- avg: ต้นทุนเฉลี่ยต่อ 1 หุ้น/หน่วย/เหรียญ/บาททอง
+- value: มูลค่าปัจจุบันรวมของสินทรัพย์ตัวนั้น (มูลค่าสินทรัพย์ / Market value)
+- cost: ต้นทุนรวมของตัวนั้น (ถ้าภาพแสดง)
+- pl: กำไร/ขาดทุนเป็นจำนวนเงิน ขาดทุนใส่ติดลบ เช่น -68.35
+- plPct: กำไร/ขาดทุนเป็น % ขาดทุนใส่ติดลบ เช่น -5.44 (ห้ามใช้ % สัดส่วนพอร์ต เช่น 61.75% ที่เป็นสัดส่วนของพอร์ต)
+- สำคัญ: หน้ารวมสินทรัพย์ของ Dime มักไม่แสดง qty และ avg ให้ใส่ null สองช่องนี้ แล้วใส่ value + pl + plPct ตามที่เห็นแทน ระบบจะคำนวณจำนวนและต้นทุนเฉลี่ยให้เอง ห้ามคำนวณหรือเดา qty/avg เอง
+- currency: สกุลเงินของตัวเลข avg/value/cost/pl คือ "USD" หรือ "THB" (หุ้นสหรัฐฯ ใช้ตัวเลข USD ไม่ใช่ตัวที่แปลงเป็นบาท)
 - date: วันที่ซื้อแบบ YYYY-MM-DD ถ้าไม่เห็นในภาพให้ใส่ null
-- nav: เฉพาะกองทุน ใส่ราคา NAV ล่าสุดต่อหน่วยที่เห็นในภาพ ถ้าไม่มีให้ใส่ null
+- nav: เฉพาะกองทุน ใส่ NAV ล่าสุดต่อหน่วยที่เห็นในภาพ ถ้าไม่มีให้ใส่ null
+- region: เฉพาะกองทุน "foreign" ถ้าลงทุนต่างประเทศ (Feeder/FIF/ชื่อมี US, GLOBAL, CHINA, S&P, NASDAQ ฯลฯ) "thai" ถ้าลงทุนหุ้นไทย "mixed" ถ้าผสม ไม่แน่ใจใส่ null
 - ตัวเดียวกันที่ปรากฏหลายรูปให้รวมเป็นรายการเดียว
-- ตัวเลขต้องเป็น number ไม่มีคอมมา อ่านให้ตรงภาพทุกหลัก ห้ามเดา อ่านไม่ออกให้ใส่ null
-- ไม่ต้องใส่เงินสดหรือยอดคงเหลือที่ไม่ใช่สินทรัพย์`;
+- ตัวเลขต้องเป็น number ไม่มีคอมมา อ่านให้ตรงภาพทุกหลัก อ่านไม่ออกให้ใส่ null
+- ไม่ต้องใส่เงินสดหรือยอดรวมทั้งพอร์ต`;
 
 const TYPE_ALIAS = {
   thai: "thai", th: "thai", set: "thai", mai: "thai", thai_stock: "thai", stock_th: "thai", "หุ้นไทย": "thai",
@@ -1713,10 +1720,41 @@ function parseAI(text) {
     // เข้มงวด: "หุ้นต่างประเทศ" ที่ต้นทุนเป็นบาท หรือชื่อแบบกองทุนไทย / มี NAV → เป็นกองทุนรวม
     if (type === "us" && (looksLikeThaiFund(sym) || (cur === "THB" && isFinite(num(it.nav))))) fixedType = "fund";
     const region = ["foreign", "thai", "mixed"].includes(it.region) ? it.region : null;
-    const out = { type: fixedType, symbol: sym, qty: num(it.qty), avg: num(it.avg), currency: cur, date, nav: num(it.nav), region, moved: fixedType !== type };
+    const out = { type: fixedType, symbol: sym, qty: num(it.qty), avg: num(it.avg), currency: cur, date, nav: num(it.nav), region, moved: fixedType !== type,
+      value: num(it.value ?? it.market_value), cost: num(it.cost ?? it.total_cost), pl: num(it.pl ?? it.profit), plPct: num(it.plPct ?? it.pl_pct ?? it.profit_pct) };
     out.ok = !!type && !!sym && out.qty > 0 && out.avg >= 0;
+    out.needPrice = !out.ok && !(out.qty > 0) && isFinite(out.value) && !(isFinite(out.avg) && out.avg > 0 && isFinite(aiCost(out)));
     return out;
   });
+}
+// ต้นทุนรวมจาก cost หรือ มูลค่า − กำไร หรือ มูลค่า ÷ (1 + %กำไร)
+function aiCost(x) {
+  if (isFinite(x.cost)) return x.cost;
+  if (isFinite(x.value) && isFinite(x.pl)) return x.value - x.pl;
+  if (isFinite(x.value) && isFinite(x.plPct) && x.plPct > -100) return x.value / (1 + x.plPct / 100);
+  return NaN;
+}
+// หุ้นต่างประเทศที่ AI ให้ตัวเลขเป็นบาท → แปลงเป็น USD
+function aiToUSD(x, fx) {
+  if (x.type !== "us" || x.currency !== "THB") return x;
+  if (!(fx > 0)) { x.ok = false; return x; }
+  for (const k of ["avg", "value", "cost", "pl"]) if (isFinite(x[k])) x[k] /= fx;
+  x.fx = fx; x.currency = "USD";
+  return x;
+}
+// เติม qty / avg ที่ภาพไม่ได้แสดง (เช่นหน้ารวมของ Dime) จาก มูลค่า + กำไร + ราคาปัจจุบัน
+function completeAI(x, price) {
+  const cost = aiCost(x);
+  const dp = x.type === "thai" ? 0 : x.type === "fund" ? 4 : x.type === "crypto" ? 8 : 6;
+  const r = (v) => Math.round(v * 10 ** dp) / 10 ** dp;
+  if (!(x.qty > 0)) {
+    if (x.avg > 0 && isFinite(cost)) { x.qty = r(cost / x.avg); x.derived = true; }
+    else if (isFinite(x.value) && price > 0) { x.qty = r(x.value / price); x.derived = true; }
+  }
+  if (!(x.avg >= 0) && x.qty > 0 && isFinite(cost)) { x.avg = cost / x.qty; x.derived = true; }
+  x.ok = !!x.type && !!x.symbol && x.qty > 0 && x.avg >= 0;
+  if (x.ok) x.needPrice = false;
+  return x;
 }
 // @shared-end
 async function aiImportFlow(data) {
@@ -1732,16 +1770,41 @@ async function aiImportFlow(data) {
   try { items = parseAI(Pasteboard.paste()); }
   catch (e) { return info("อ่านผลลัพธ์ไม่ได้", `${e.message}\nให้คัดลอกคำตอบของ AI ทั้งก้อน (ส่วนที่เป็น JSON) แล้วลองใหม่`); }
 
-  // หุ้นต่างประเทศที่ AI ให้ต้นทุนเป็นบาท → แปลงเป็น USD ด้วยเรทปัจจุบัน
+  // หุ้นต่างประเทศที่ AI ให้ตัวเลขเป็นบาท → แปลงเป็น USD ด้วยเรทปัจจุบัน
   if (items.some((x) => x.type === "us" && x.currency === "THB")) {
     let fx = NaN;
     try { fx = (await yahoo("THB=X")).price; } catch (e) {}
-    for (const x of items) if (x.type === "us" && x.currency === "THB") {
-      if (isFinite(fx)) { x.avg = x.avg / fx; x.fx = fx; } else x.ok = false;
+    for (const x of items) aiToUSD(x, fx);
+  }
+  // ไม่มีจำนวน/ต้นทุนเฉลี่ยในภาพ → ดึงราคาปัจจุบันมาคำนวณจากมูลค่า + กำไร
+  let bk = null, gold = null;
+  const priceOf = async (x) => {
+    try {
+      if (x.type === "us") return (await yahoo(x.symbol)).price;
+      if (x.type === "thai") return (await yahoo(x.symbol + ".BK")).price;
+      if (x.type === "crypto") { bk ||= await bitkubTicker(); return bk[x.symbol] ? bk[x.symbol].price : NaN; }
+      if (x.type === "gold") { gold ||= await hshGold(); return gold.price; }
+      if (x.type === "fund") return isFinite(x.nav) ? x.nav : data.navs[x.symbol] ? data.navs[x.symbol].nav : NaN;
+    } catch (e) {}
+    return NaN;
+  };
+  for (const x of items) {
+    if (x.ok || !x.needPrice) { if (!x.ok) completeAI(x, NaN); continue; }
+    let price = await priceOf(x);
+    // หาราคาไม่เจอ (มักเพราะ AI อ่านชื่อผิด เช่น QQGI แทน QQQI) → ให้แก้ชื่อแล้วลองใหม่
+    for (let tries = 0; !(price > 0) && x.type !== "fund" && tries < 2; tries++) {
+      const a = new Alert(); a.title = `หาราคา "${x.symbol}" ไม่เจอ`;
+      a.message = `AI อาจอ่านชื่อผิด (มูลค่าในภาพ ${fmtPrice(x.value)} ${x.currency || ""})\nพิมพ์ชื่อหุ้นที่ถูกต้อง`;
+      a.addTextField("ชื่อหุ้น", x.symbol); a.addAction("ลองใหม่"); a.addCancelAction("ข้าม");
+      if ((await a.presentAlert()) === -1) break;
+      x.symbol = a.textFieldValue(0).toUpperCase().trim().replace(/\.BK$/, "");
+      price = await priceOf(x);
     }
+    if (!(price > 0)) x.priceErr = true;
+    completeAI(x, price);
   }
   const good = items.filter((x) => x.ok), bad = items.filter((x) => !x.ok);
-  const lineOf = (x) => `${x.ok ? "•" : "⚠︎"} ${x.type ? CATS[TYPES[x.type].cat].name : "?"}${x.moved ? "(แก้หมวดให้)" : ""}${x.region ? "·" + REGION[x.region] : ""} ${x.symbol || "?"} · ${isFinite(x.qty) ? fmt(x.qty, 6).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "") : "?"} @ ${isFinite(x.avg) ? fmtPrice(x.avg) + (x.type === "us" ? " USD" : "") : "?"}`;
+  const lineOf = (x) => `${x.ok ? "•" : "⚠︎"} ${x.type ? CATS[TYPES[x.type].cat].name : "?"}${x.moved ? "(แก้หมวดให้)" : ""}${x.region ? "·" + REGION[x.region] : ""} ${x.symbol || "?"} · ${isFinite(x.qty) ? fmt(x.qty, 6).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "") : "?"} @ ${isFinite(x.avg) ? fmtPrice(x.avg) + (x.type === "us" ? " USD" : "") : "?"}${x.derived ? " (คำนวณจากมูลค่า)" : ""}${x.priceErr ? " (หาราคาไม่เจอ ตรวจชื่อหุ้น)" : ""}`;
   const preview = items.map(lineOf).join("\n") + (bad.length ? `\n\n⚠︎ ${bad.length} รายการข้อมูลไม่ครบ จะให้แก้ทีละรายการ` : "");
   const m = await ask(`พบ ${items.length} รายการ`, preview, [
     "อัปเดตทับตัวเดิม (แนะนำ: รูปคือยอดถือปัจจุบัน)",

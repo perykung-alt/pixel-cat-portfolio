@@ -430,8 +430,31 @@ function aiImport() {
   let items;
   try { items = parseAI($("aiText").value); } catch (e) { toast(e.message + " — คัดลอกคำตอบของ AI ทั้งก้อนมาวาง", 4000); return; }
   const fx = feed && feed.fx ? feed.fx.price : NaN;
-  for (const x of items) if (x.type === "us" && x.currency === "THB") { if (isFinite(fx)) { x.avg /= fx; x.fx = fx; } else x.ok = false; }
-  const line = (x) => `<div class="li"><span>${x.ok ? "•" : "⚠︎"} <b>${esc(x.symbol || "?")}</b> <span class="sub">${x.type ? CATS[TYPES[x.type].cat].name : "?"}${x.moved ? " (แก้หมวดให้)" : ""}${x.region ? " · " + REGION[x.region] : ""}</span></span><span>${isFinite(x.qty) ? qtyStr(x.qty, x.type) : "?"} @ ${isFinite(x.avg) ? fmtPrice(x.avg) + (x.type === "us" ? " USD" : "") : "?"}</span></div>`;
+  const f = feed || { stocks: {}, crypto: {} };
+  for (const x of items) {
+    aiToUSD(x, fx);
+    if (x.ok) continue;
+    // หน้ารวมของ Dime ไม่มีจำนวน/ต้นทุนเฉลี่ย → ใช้ราคาปัจจุบันคำนวณจากมูลค่า + กำไร
+    let p = null;
+    if (x.type === "us") p = f.stocks[x.symbol];
+    else if (x.type === "thai") p = f.stocks[x.symbol + ".BK"];
+    else if (x.type === "crypto") p = f.crypto[x.symbol];
+    else if (x.type === "gold") p = f.gold;
+    const m = data.manual[key(x.type, x.symbol)];
+    const price = x.type === "fund" ? (isFinite(x.nav) ? x.nav : data.navs[x.symbol] ? data.navs[x.symbol].nav : NaN) : p ? p.price : m ? m.price : NaN;
+    completeAI(x, price);
+    // หาราคาไม่เจอ (มักเพราะ AI อ่านชื่อผิด เช่น QQGI แทน QQQI) → ให้แก้ชื่อแล้วลองใหม่
+    if (!x.ok && x.needPrice && x.type !== "fund") {
+      const fixed = prompt(`หาราคา "${x.symbol}" ไม่เจอ — AI อาจอ่านชื่อผิด\n(มูลค่าในภาพ ${fmtPrice(x.value)} ${x.currency || ""})\nพิมพ์ชื่อหุ้นที่ถูกต้อง หรือกดยกเลิกเพื่อข้าม`, x.symbol);
+      if (fixed) {
+        x.symbol = fixed.toUpperCase().trim().replace(/\.BK$/, "");
+        const q = x.type === "us" ? f.stocks[x.symbol] : x.type === "thai" ? f.stocks[x.symbol + ".BK"] : x.type === "crypto" ? f.crypto[x.symbol] : null;
+        completeAI(x, q ? q.price : NaN);
+      }
+    }
+    if (!x.ok && x.needPrice) x.noPrice = true;
+  }
+  const line = (x) => `<div class="li"><span>${x.ok ? "•" : "⚠︎"} <b>${esc(x.symbol || "?")}</b> <span class="sub">${x.type ? CATS[TYPES[x.type].cat].name : "?"}${x.moved ? " (แก้หมวดให้)" : ""}${x.region ? " · " + REGION[x.region] : ""}</span></span><span>${isFinite(x.qty) ? qtyStr(x.qty, x.type) : "?"} @ ${isFinite(x.avg) ? fmtPrice(x.avg) + (x.type === "us" ? " USD" : "") : "?"}${x.derived ? `<br><span class="sub">คำนวณจากมูลค่า</span>` : ""}${x.noPrice ? `<br><span class="sub down">ยังไม่มีราคาตัวนี้ในระบบ / ตรวจชื่อหุ้น</span>` : ""}</span></div>`;
   const bad = items.filter((x) => !x.ok).length;
   openDialog(`<h2>พบ ${items.length} รายการ</h2>${items.map(line).join("")}
     ${bad ? `<div class="hint">⚠︎ ${bad} รายการข้อมูลไม่ครบ จะข้ามไป (เพิ่มเองทีหลังได้)</div>` : ""}
