@@ -78,7 +78,7 @@ function catGrid(mood, breed) {
 // @shared-end
 
 // ---------- เวอร์ชัน & อัปเดตอัตโนมัติ ----------
-const VERSION = "6.4.2";
+const VERSION = "6.4.3";
 const REPO = "perykung-alt/pixel-cat-portfolio";
 const UPDATE_BASE = `https://raw.githubusercontent.com/${REPO}/main/`;
 const REPO_URL = `https://github.com/${REPO}`;
@@ -1118,7 +1118,7 @@ function makeCatEngine(SPR) {
   };
   function prop(P, name, x, y, flip) { const p = PROPS[name]; drawSprite(P, p.rows, p.pal, Math.round(x), Math.round(y), flip); return p.rows[0].length; }
 
-  // ================= ISOMETRIC (v6.4.2): ห้องไดโอรามา + แมว 3 มิติแบบพิกเซล =================
+  // ================= ISOMETRIC (v6.4.2): ห้องไดโอรามา + แมว 3 มิติแบบพิกเซล (v6.4.3: เอาเกาะนอกห้องออก) =================
   // โลก: x → ขวาล่าง, y → ซ้ายล่าง, z ขึ้น · จอ: sx = x - y, sy = (x + y)/2 - z · ใกล้ตาเรา = x+y+z มาก
   const hex2rgb = (h) => { h = h.replace("#", ""); const n = parseInt(h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
   const rgb2hex = (r, g, b) => "#" + [r, g, b].map((v) => clamp(Math.round(v), 0, 255).toString(16).padStart(2, "0")).join("");
@@ -1277,7 +1277,7 @@ function makeCatEngine(SPR) {
       : hour < 17 ? { top: "#8CCBFF", bot: "#E9F6FF" }
         : { top: "#3D3A78", bot: "#FFAE73", dawn: 1 };
   const ROOM = { wallL: "#F3E2C4", wallR: "#E7CDA8", cap: "#B97A4C", capSide: "#8E5534", base: "#B98257", floor: "#D39A62", plank: "#B9804B", slab: "#9A5F35",
-    soil: "#6E4A30", soil2: "#5A3B27", stone: "#8C7462", grass: "#86B84E", grass2: "#6E9F3E", grassSide: "#5C8F33", water: "#5BC0F0", water2: "#3D97D6", waterHi: "#C9F1FF" };
+    soil: "#6E4A30", soil2: "#5A3B27", stone: "#8C7462", };
   const staticCache = new Map();
 
   function renderScene(P0, S) {
@@ -1285,19 +1285,7 @@ function makeCatEngine(SPR) {
     const T = Math.max(5, Math.round(h * 0.1)), Hw = Math.max(12, Math.round(h * 0.29));
     const SS = Math.min(Math.floor((h - Hw - T - 3) * 2), w - 6);
     const A = Math.round(SS * 0.55), Bd = SS - A, k = SS / 110;
-    const spare = w - SS;
-    const gap0 = Math.round(4 + 6 * k), twoIsl = spare > SS * 1.3;
-    const isl0 = Math.min(Math.round(SS * 0.62), Math.floor((spare - 8 - gap0 * (twoIsl ? 2 : 1)) / (twoIsl ? 2 : 1)));
-    const isl = isl0 >= 34 ? isl0 : 0;
-    // เกาะสวนข้างห้อง (โลกเดียวกัน) แล้วจัดกึ่งกลางทั้งภาพ
-    const gap = gap0, ia = Math.round(isl * 0.55), ib = isl - ia;
-    // เลื่อนเกาะตามแนว (1,1) ให้กึ่งกลางสูงพอๆ กับพื้นห้อง (ลอยขึ้นนิดหน่อย)
-    const d1 = Math.round(SS / 4 - (A + gap + (ia - ib) / 2) / 2) - 3, d2 = Math.round(SS / 4 - (Bd + gap + (ia - ib) / 2) / 2) - 3;
-    const I1 = isl ? { x: A + gap + d1, y: -ib + d1, a: ia, b: ib } : null;
-    const I2 = isl && twoIsl ? { x: -ia + d2, y: Bd + gap + d2, a: ib, b: ia } : null;
-    let mnX = -Bd, mxX = A;
-    if (I1) mxX = Math.max(mxX, I1.x + I1.a - I1.y);
-    if (I2) mnX = Math.min(mnX, I2.x - I2.y - I2.b);
+    const mnX = -Bd - 2, mxX = A + 2;
     const ox = Math.round((w - (mxX - mnX)) / 2) - mnX, oy = Math.round((h - (SS / 2 + Hw + T)) / 2) + Hw + 1;
     const sc = clamp(SS / 165, 0.36, 0.72);
     const X = (x, y) => ox + x - y, Y = (x, y, z) => oy + (x + y) / 2 - z;
@@ -1347,47 +1335,6 @@ function makeCatEngine(SPR) {
         if (n > 0.93) return ROOM.stone;
         return Math.floor(v + Math.sin(u * 0.35) * 1.3) % 4 === 0 ? ROOM.soil2 : ROOM.soil;
       };
-
-      // ===== เกาะสวน (อ้างอิงไดโอรามาแบบตัดดิน) =====
-      function island(ix, iy, a, b, kind) {
-        const hz = -2; // หญ้าต่ำกว่าพื้นห้องนิดหนึ่ง
-        const pond = kind === "pond" ? { x: a * 0.42, y: b * 0.38 } : null;
-        const inPond = (u, v) => pond && u >= pond.x && v >= pond.y;
-        face([ix, iy, hz], [1, 0, 0], [0, 1, 0], a, b, (u, v) => {
-          if (inPond(u, v)) {
-            if (u < pond.x + 1 || v < pond.y + 1) return ROOM.stone;
-            const lily = hash(Math.floor(u / 3), Math.floor(v / 3), 3) > 0.86;
-            return lily ? "#4E9A3A" : (Math.floor(u + v * 2) % 9 === 0 ? ROOM.waterHi : ROOM.water);
-          }
-          const n = hash(Math.floor(u), Math.floor(v), 11);
-          return n > 0.97 ? (n > 0.985 ? "#FFE36A" : "#FF8FB0") : n > 0.82 ? ROOM.grass2 : ROOM.grass;
-        });
-        face([ix, iy + b, hz - T - 2], [1, 0, 0], [0, 0, 1], a, T + 2, (u, v) => (pond && u >= pond.x ? (Math.floor(u) % 3 === 0 && hash(Math.floor(u), Math.floor(v / 2), 4) > 0.4 ? ROOM.water : ROOM.water2) : soilFn(a, T + 2, 1.5, ROOM.grassSide)(u, v)));
-        face([ix + a, iy, hz - T - 2], [0, 1, 0], [0, 0, 1], b, T + 2, (u, v) => (pond && u >= pond.y ? shade(ROOM.water2, -0.12) : shade(soilFn(b, T + 2, 1.5, ROOM.grassSide)(u, v), -0.12)));
-        line([ix, iy + b, hz], [ix + a, iy + b, hz], ROOM.grassSide);
-        if (kind === "pond") {
-          // เสาโคมไฟ + โคมแดง
-          const lx = ix + Math.round(a * 0.18), ly = iy + Math.round(b * 0.22), ph = Math.max(8, Math.round(Hw * 0.55));
-          box(lx, ly, hz, 1.5, 1.5, ph, "#8E5534", "#7A4A2A", "#5E3820", "#3B2418");
-          box(lx - 1, ly - 1, hz + ph, 3.5, 3.5, 4, "#5E3820", (u, v) => (u > 0.8 && u < 2.7 && v > 0.8 && v < 3.2 ? "#FFD27A" : "#E2464F"), (u, v) => (u > 0.8 && u < 2.7 && v > 0.8 && v < 3.2 ? "#F2B24E" : "#B5323B"), "#3B2418");
-          box(lx - 1.5, ly - 1.5, hz + ph + 4, 4.5, 4.5, 1, "#5E3820", "#4A2C18", "#3B2418", null);
-          // ไห + พุ่มไม้
-          box(ix + a * 0.12, iy + b * 0.62, hz, 3, 3, 3, "#E39A3A", "#C77E28", "#A0631C", "#3B2418");
-          box(ix + a * 0.5, iy + 1, hz, 4, 4, 3, "#5FA348", "#4E8E3A", "#3E762E", "#2A4A1E");
-        } else {
-          // ต้นไม้ทรงลูกบาศก์ + กล่องไปรษณีย์
-          const tx = ix + Math.round(a * 0.35), ty = iy + Math.round(b * 0.3), th2 = Math.max(6, Math.round(Hw * 0.45));
-          box(tx, ty, hz, 2, 2, th2, "#8E5534", "#7A4A2A", "#5E3820", "#3B2418");
-          const cs = Math.max(7, Math.round(10 * k));
-          box(tx - cs / 2 + 1, ty - cs / 2 + 1, hz + th2, cs, cs, cs * 0.8, (u, v) => (hash(Math.floor(u), Math.floor(v), 5) > 0.8 ? "#9BD066" : "#7DBA52"),
-            (u, v) => (hash(Math.floor(u), Math.floor(v), 6) > 0.85 ? "#7DBA52" : "#5E9E3E"), (u, v) => (hash(Math.floor(u), Math.floor(v), 8) > 0.85 ? "#5E9E3E" : "#467E2E"), "#2A4A1E");
-          box(tx - cs / 2 + 3, ty - cs / 2 + 3, hz + th2 + cs * 0.8, cs - 4, cs - 4, cs * 0.45, "#9BD066", "#6FAE48", "#518E36", "#2A4A1E");
-          box(ix + a * 0.72, iy + b * 0.66, hz, 2.5, 2.5, 6, "#E2464F", "#C7353F", "#9E2A3A", "#3B2418");
-          box(ix + a * 0.15, iy + b * 0.75, hz, 3, 2, 1.5, "#B0A090", "#9A8A7A", "#857565", null);
-        }
-      }
-      if (I1) island(I1.x, I1.y, I1.a, I1.b, "pond");
-      if (I2) island(I2.x, I2.y, I2.a, I2.b, "tree");
 
       // ===== ห้อง =====
       // ฐานดิน + พื้นไม้
@@ -1485,7 +1432,6 @@ function makeCatEngine(SPR) {
         if (night) {
           glow(X(lmx, lmy), Y(lmx, lmy, Hw * 0.55 + 2), 14 * k + 4, "#FFD27A", 0.35);
           glow(X(lpx, lpy + lpw / 2), Y(lpx, lpy + lpw / 2, dk.h + lph / 2), 7 * k + 2, "#9FD0FF", 0.16);
-          if (I1) { const lx = I1.x + Math.round(I1.a * 0.18), ly = I1.y + Math.round(I1.b * 0.22); glow(X(lx, ly), Y(lx, ly, Math.max(8, Math.round(Hw * 0.55)) - 2 + 2), 10 * k + 3, "#FF9A6A", 0.4); }
         }
       }
       base = { fb };
