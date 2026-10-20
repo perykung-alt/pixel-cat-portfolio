@@ -78,7 +78,7 @@ function catGrid(mood, breed) {
 // @shared-end
 
 // ---------- เวอร์ชัน & อัปเดตอัตโนมัติ ----------
-const VERSION = "6.4.1";
+const VERSION = "6.4.2";
 const REPO = "perykung-alt/pixel-cat-portfolio";
 const UPDATE_BASE = `https://raw.githubusercontent.com/${REPO}/main/`;
 const REPO_URL = `https://github.com/${REPO}`;
@@ -1118,107 +1118,479 @@ function makeCatEngine(SPR) {
   };
   function prop(P, name, x, y, flip) { const p = PROPS[name]; drawSprite(P, p.rows, p.pal, Math.round(x), Math.round(y), flip); return p.rows[0].length; }
 
-  // scene state: { activity, mood, t (0..1 loop), seed, hour, catColor, chartUp, w, h }
-  function renderScene(P, S) {
-    const { w, h } = S, hour = S.hour, th = skyFor(hour);
-    const floorY = h - 3;
-    // wall + window
-    P(0, 0, w, floorY, th.wall);
-    for (let x = 0; x < w; x += 6) P(x, 0, 3, floorY, th.wall2, 0.5);
-    const winW = Math.min(22, Math.floor(w * 0.3)), winH = Math.min(14, Math.floor(floorY * 0.55));
-    const wx = w - winW - 4, wy = 2;
-    if (h >= 26) {
-      P(wx - 1, wy - 1, winW + 2, winH + 2, "#5A3A28");
-      th.sky.forEach((c, i) => P(wx, wy + Math.floor((winH * i) / 3), winW, Math.ceil(winH / 3), c));
-      if (th.night) {
-        for (let i = 0; i < 7; i++) P(wx + ((i * 7 + S.seed) % winW), wy + ((i * 5 + S.seed * 3) % (winH - 1)), 1, 1, "#FFFFFF", i % 2 ? 0.6 : 1);
-        prop(P, "moon", wx + winW - 7, wy + 2);
-      } else prop(P, "sun", wx + 3, wy + 2);
-      P(wx + Math.floor(winW / 2), wy, 1, winH, "#5A3A28");
-      P(wx, wy + Math.floor(winH / 2), winW, 1, "#5A3A28");
+  // ================= ISOMETRIC (v6.4.2): ห้องไดโอรามา + แมว 3 มิติแบบพิกเซล =================
+  // โลก: x → ขวาล่าง, y → ซ้ายล่าง, z ขึ้น · จอ: sx = x - y, sy = (x + y)/2 - z · ใกล้ตาเรา = x+y+z มาก
+  const hex2rgb = (h) => { h = h.replace("#", ""); const n = parseInt(h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  const rgb2hex = (r, g, b) => "#" + [r, g, b].map((v) => clamp(Math.round(v), 0, 255).toString(16).padStart(2, "0")).join("");
+  const MIX = {};
+  function mix(a, b, k) {
+    const key = a + b + k; let v = MIX[key];
+    if (!v) { const A = hex2rgb(a), B = hex2rgb(b); v = MIX[key] = rgb2hex(A[0] + (B[0] - A[0]) * k, A[1] + (B[1] - A[1]) * k, A[2] + (B[2] - A[2]) * k); }
+    return v;
+  }
+  const shade = (c, k) => (k >= 0 ? mix(c, "#FFF6E6", k) : mix(c, "#24122A", -k));
+  function hash(a, b, c) { let h = (a * 374761393 + b * 668265263 + c * 1274126177) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+  const LIGHT = (() => { const v = [-0.6, 0.15, 1], n = Math.hypot(v[0], v[1], v[2]); return v.map((a) => a / n); })();
+  const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // 0=ขวาล่าง 1=ซ้ายล่าง 2=ซ้ายบน(หันหลัง) 3=ขวาบน
+
+  // ---------- แมวแบบ voxel: ใช้ท่าเดิม (มุมข้าง) มาปั้นเป็น 3 มิติ แล้วฉายแบบ isometric ----------
+  function catSprite(poseName, t, breed, dir, sc, o = {}) {
+    const Pz = (POSES[poseName] || POSES.sit)(t, o);
+    const bo = breedOpts(breed), pal = catPalette(breed);
+    const pts = !!bo.points, calico = breed === "calico", tabby = bo.tabby !== false && !pts && !calico;
+    const [fx, fy] = DIRS[((dir % 4) + 4) % 4], gx = -fy, gy = fx;
+    const zb = new Map();
+    const step = Math.min(0.55, 0.4 / sc);
+    const toW = (x2, y2, z2) => { const U = (x2 - 17) * sc, Z = z2 * sc; return [fx * U + gx * Z, fy * U + gy * Z, (22.5 - y2) * sc]; };
+    function plot(x2, y2, z2, n, base) {
+      const [wx, wy, wz] = toW(x2, y2, z2);
+      const px = Math.round(wx - wy), py = Math.round((wx + wy) / 2 - wz), d = wx + wy + wz, k = py * 4096 + px;
+      const cur = zb.get(k);
+      if (cur && cur.d >= d) return;
+      const nl = Math.hypot(n[0], n[1], n[2]) || 1;
+      const L = ((fx * n[0] + gx * n[2]) * LIGHT[0] + (fy * n[0] + gy * n[2]) * LIGHT[1] - n[1] * LIGHT[2]) / nl;
+      zb.set(k, { d, px, py, c: L > 0.6 ? shade(base, 0.22) : L < -0.3 ? shade(base, -0.34) : L < 0.12 ? shade(base, -0.15) : base });
     }
-    // floor
-    P(0, floorY, w, 3, th.floor);
-    for (let x = (S.seed % 5); x < w; x += 9) P(x, floorY + 1, 6, 1, th.floor2);
-    if (th.night) P(0, 0, w, h, "#0B0820", 0.18);
-
-    // activity layout
-    const pal = catPalette(S.catColor), bo = breedOpts(S.catColor);
-    const catY = floorY - 22;
-    const A = S.activity, t = S.t;
-    let catX = Math.round(S.catX ?? (w - 34) / 2), face = S.face ?? 1, pose = "sit", o = {};
-    const flyFrame = Math.floor((S.ft ?? t) * 6) % 2 ? "fly1" : "fly2";
-    const moodEyes = S.mood === "sad" ? "half" : S.mood === "happy" || S.mood === "wow" ? "happy" : "open";
-
-    if (A === "watchTH" || A === "watchUS" || A === "ready") {
-      const lx = Math.min(w - 13, catX + 28);
-      catX = lx - 27; pose = "work"; o = { eyes: A === "ready" ? "open" : S.mood === "sad" ? "half" : "open", type: A !== "ready" };
-      // desk
-      P(lx - 2, floorY - 4, 14, 1, "#7A4E30"); P(lx - 1, floorY - 3, 1, 3, "#5A3A22"); P(lx + 10, floorY - 3, 1, 3, "#5A3A22");
-      prop(P, "laptop", lx - 1, floorY - 13);
-      // mini chart on screen
-      const up = S.chartUp !== false, cc = up ? "#5BE38A" : "#FF6B7A";
-      const pts = [];
-      for (let i = 0; i < 7; i++) { const v = Math.round(2 + Math.sin(i * 1.3 + S.seed) * 1.2 + (up ? (6 - i) * -0.35 : i * -0.35) + 1.5); pts.push(clamp(v, 0, 3)); }
-      pts.forEach((v, i) => P(lx + 2 + i, floorY - 12 + v, 1, 1, cc));
-      if (A === "watchUS") prop(P, "mug", lx + 12 > w - 6 ? catX - 2 : lx + 12, floorY - 9);
-      if (th.night && A === "watchUS") P(lx + 1, floorY - 13, 9, 6, "#9FD0FF", 0.15);
-    } else if (A === "eat") {
-      pose = "eat"; o = {};
-      prop(P, "bowl", catX + 27, floorY - 4);
-    } else if (A === "sleep") {
-      pose = "sleep";
-      P(catX + 3, floorY - 1, 28, 2, "#E2464F"); P(catX + 4, floorY, 26, 1, "#9E2A3A");
-      const zt = Math.floor(t * 3);
-      for (let i = 0; i <= zt; i++) prop(P, "z", catX + 26 + i * 3, catY + 10 - i * 4);
-    } else if (A === "butterfly") {
-      // cat chases a butterfly across the room
-      const fx = lerp(6, w - 10, (Math.sin(t * TAU) + 1) / 2), fy = catY + 2 + Math.sin(t * TAU * 3) * 3;
-      const dir = Math.cos(t * TAU) >= 0 ? 1 : -1;
-      face = dir; catX = Math.round(clamp(fx - (dir > 0 ? 32 : -2), 0, w - 34));
-      pose = Math.abs(Math.cos(t * TAU)) < 0.25 ? "pounce" : "run";
-      prop(P, flyFrame, fx, fy);
-    } else if (A === "yarn") {
-      const k = (Math.sin(t * TAU) + 1) / 2, yx = lerp(4, w - 10, k);
-      face = Math.cos(t * TAU) >= 0 ? 1 : -1;
-      catX = Math.round(clamp(yx - (face > 0 ? 30 : -4), 0, w - 34));
-      pose = "walk"; prop(P, "yarn", yx, floorY - 5);
-    } else if (A === "zoomies") {
-      const k = (t * 2) % 1; face = t < 0.5 ? 1 : -1;
-      catX = Math.round(face > 0 ? lerp(-30, w, k) : lerp(w, -30, k)); pose = "run";
-      for (let i = 0; i < 4; i++) prop(P, "coin", (S.seed * 7 + i * 13 + t * 40) % (w - 4), (i * 5 + t * h * 2) % (floorY - 4));
-    } else if (A === "walk") {
-      const k = (Math.sin(t * TAU) + 1) / 2; face = Math.cos(t * TAU) >= 0 ? 1 : -1;
-      catX = Math.round(lerp(-2, w - 32, k)); pose = "walk";
-      prop(P, "plant", 2, floorY - 6);
-    } else if (A === "stretch") { pose = "stretch"; }
-    else if (A === "groom") { pose = "sit"; o = { groom: true }; }
-    else if (A === "watchFly") {
-      pose = "sit"; o = { lookUp: true, eyes: "wide" };
-      prop(P, flyFrame, catX + 22 + Math.sin(t * TAU) * 4, catY - 3 + Math.cos(t * TAU * 2) * 2);
-    } else if (A === "sulk") {
-      pose = "loaf"; face = -1; o = { eyes: "half" };
-      prop(P, "cloud", catX + 12, Math.max(0, catY - 4));
-    } else if (A === "loaf") { pose = "loaf"; o = { eyes: moodEyes }; }
-    else { pose = "sit"; o = { eyes: moodEyes }; }
-
-    if (S.sleepy && (A === "watchUS" || A === "watchTH")) o.eyes = "half";
-    const cells = catCells(pose, S.ft ?? t, Object.assign({}, bo, { o }));
-    drawSprite(P, cells.map((r) => r.join("")), pal, catX, catY, face < 0);
-    // mood accents
-    if (S.mood === "happy" && A !== "sleep") prop(P, "heart", catX + (face > 0 ? 28 : 0), catY + 1 + Math.round(Math.sin(t * TAU * 2)));
-    if (S.mood === "sad" && (A === "watchTH" || A === "watchUS")) prop(P, "sweat", catX + 23, catY + 4);
-    if (S.mood === "wow" && A !== "zoomies" && A !== "sleep") for (let i = 0; i < 3; i++) prop(P, "coin", catX + 6 + i * 9, catY - 2 + ((Math.floor(t * 6) + i) % 3));
-    return { catX, face };
+    function coat(x2, y2, z2) {
+      if (calico) { const n = hash(Math.floor(x2 / 3.4), Math.floor(y2 / 3.4), Math.floor((z2 + 9) / 3.4)); return n < 0.24 ? pal.D : n < 0.4 ? "#3A2E2A" : pal.O; }
+      if (tabby && Math.floor(x2 * 0.7 + y2 * 0.25 + 40) % 3 === 0) return pal.D;
+      return pal.O;
+    }
+    // ทรงรี (ตัว/สะโพก/หัว)
+    function ell(e, rz, colorFn) {
+      const R = Math.max(e.rx, e.ry) + 0.3, c = Math.cos(e.rot || 0), s = Math.sin(e.rot || 0);
+      for (let x2 = e.x - R; x2 <= e.x + R; x2 += step) for (let y2 = e.y - R; y2 <= e.y + R; y2 += step) {
+        const dx = x2 - e.x, dy = y2 - e.y, u = dx * c + dy * s, v = -dx * s + dy * c;
+        const q = (u * u) / (e.rx * e.rx) + (v * v) / (e.ry * e.ry);
+        if (q > 1) continue;
+        const zm = rz * Math.sqrt(1 - q);
+        for (let z2 = -zm; z2 <= zm + 1e-6; z2 += step) {
+          const gu = u / (e.rx * e.rx), gv = v / (e.ry * e.ry);
+          plot(x2, y2, z2, [gu * c - gv * s, gu * s + gv * c, z2 / (rz * rz)], colorFn(x2, y2, z2, u, v));
+        }
+      }
+    }
+    // แคปซูล (ขา/หาง)
+    function cap(a, b, r, z0, colorFn) {
+      const x0 = Math.min(a[0], b[0]) - r, x1 = Math.max(a[0], b[0]) + r, y0 = Math.min(a[1], b[1]) - r, y1 = Math.max(a[1], b[1]) + r;
+      const vx = b[0] - a[0], vy = b[1] - a[1], ll = vx * vx + vy * vy || 1;
+      for (let x2 = x0; x2 <= x1; x2 += step) for (let y2 = y0; y2 <= y1; y2 += step) {
+        const tt = clamp(((x2 - a[0]) * vx + (y2 - a[1]) * vy) / ll, 0, 1), cx = a[0] + vx * tt, cy = a[1] + vy * tt;
+        const d2 = Math.hypot(x2 - cx, y2 - cy);
+        if (d2 > r) continue;
+        const zm = Math.sqrt(r * r - d2 * d2);
+        for (let z2 = z0 - zm; z2 <= z0 + zm + 1e-6; z2 += step) plot(x2, y2, z2, [x2 - cx, y2 - cy, z2 - z0], colorFn(x2, y2, tt));
+      }
+    }
+    // หู (กรวย)
+    function cone(base, apex, rb, colorFn) {
+      const ax = apex[0] - base[0], ay = apex[1] - base[1], az = apex[2] - base[2], ll = ax * ax + ay * ay + az * az;
+      const R = rb + 0.2;
+      for (let x2 = Math.min(base[0], apex[0]) - R; x2 <= Math.max(base[0], apex[0]) + R; x2 += step * 0.7)
+        for (let y2 = Math.min(base[1], apex[1]) - R; y2 <= Math.max(base[1], apex[1]) + R; y2 += step * 0.7)
+          for (let z2 = Math.min(base[2], apex[2]) - R; z2 <= Math.max(base[2], apex[2]) + R; z2 += step * 0.7) {
+            const tt = ((x2 - base[0]) * ax + (y2 - base[1]) * ay + (z2 - base[2]) * az) / ll;
+            if (tt < 0 || tt > 1) continue;
+            const qx = x2 - base[0] - ax * tt, qy = y2 - base[1] - ay * tt, qz = z2 - base[2] - az * tt, rr = Math.hypot(qx, qy, qz), lim = rb * (1 - tt);
+            if (rr > lim) continue;
+            plot(x2, y2, z2, [qx + 0.4, qy - 0.6, qz], colorFn(qx, rr / (lim || 1)));
+          }
+    }
+    const lr = 1.05;
+    // ขา
+    for (const L of Pz.legs) cap(L.a, L.b, lr, L.far ? -1.9 : 1.9, (x2, y2, tt) => (pts ? pal.D : tt > 0.82 ? pal.L : coat(x2, y2, 0)));
+    // หาง
+    for (let i = 0; i < Pz.tail.length - 1; i++) {
+      const th = lerp(1.15, 0.85, i / Math.max(1, Pz.tail.length - 2)), last = i === Pz.tail.length - 2;
+      cap(Pz.tail[i], Pz.tail[i + 1], th, 0, (x2, y2) => (pts || last ? pal.D : coat(x2, y2, 0)));
+    }
+    // ตัว
+    const B = Pz.body, upright = Math.abs(B.rot) >= 0.5;
+    const bodyCol = (x2, y2, z2, u, v) => {
+      const belly = !upright && y2 > B.y + B.ry * 0.38, chest = upright && x2 > B.x + 0.8 && Math.abs(z2) < 3;
+      if (belly || chest) return pts ? pal.M || pal.O : pal.L;
+      return pts ? (y2 < B.y - B.ry * 0.5 && !upright ? mix(pal.O, pal.D, 0.18) : pal.O) : coat(x2, y2, z2);
+    };
+    ell(B, Math.min(B.ry * 0.98, 4.3), bodyCol);
+    for (const e of Pz.extra || []) ell(e, e.ry * 1.05, bodyCol);
+    // หัว
+    const hd = Object.assign({}, Pz.head, { x: Pz.head.x + 0.3 }), r = Pz.head.r * 1.12; // หัวโตขึ้นนิด (น่ารักแบบ chibi)
+    ell({ x: hd.x, y: hd.y, rx: r, ry: r * 0.95, rot: 0 }, r * 1.05, (x2, y2, z2) => {
+      if (pts) return Math.hypot(x2 - (hd.x + r * 0.6), y2 - (hd.y + r * 0.2)) < r * 0.85 ? pal.D : pal.O;
+      if (x2 > hd.x + r * 0.35 && y2 > hd.y + r * 0.05 && Math.abs(z2) < r * 0.8) return pal.L;
+      if (tabby && y2 < hd.y - r * 0.4 && x2 > hd.x - r * 0.3 && Math.floor(z2 * 1.1 + 20) % 2 === 0) return pal.D;
+      return calico ? coat(x2, y2, z2) : pal.O;
+    });
+    // หู
+    const ear = bo.ears || Pz.ears || "up";
+    const eH = ear === "fold" ? 1.6 : ear === "small" ? 3.4 : ear === "low" ? 2.8 : ear === "back" ? 3.8 : 5;
+    for (const sd of [-1, 1]) {
+      const base = [hd.x - r * 0.05, hd.y - r * 0.6, sd * r * 0.5];
+      let apex = [base[0] + (ear === "back" ? -1.7 : 0.2), base[1] - eH, base[2] + sd * 0.6];
+      if (ear === "fold") apex = [base[0] + 1.5, base[1] - 0.9, base[2] + sd * 0.3];
+      if (ear === "low") apex = [base[0], base[1] - eH * 0.7, base[2] + sd * 1.4];
+      cone(base, apex, r * (ear === "fold" ? 0.55 : 0.5), (qx, rel) => (pts || ear === "fold" ? pal.D : qx > 0.15 && rel < 0.62 ? pal.P : calico ? pal.D : pal.O));
+    }
+    // หน้า (ตา จมูก แก้ม) — วาดเฉพาะด้านที่หันมาทางเรา
+    const C = [hd.x, hd.y, 0];
+    const feat = (p, color, h2) => {
+      const [wx, wy, wz] = toW(p[0], p[1], p[2]), [cx, cy, cz] = toW(C[0], C[1], C[2]);
+      if ((wx - cx) + (wy - cy) + (wz - cz) < 0.08 * r * sc) return;
+      const px = Math.round(wx - wy), py = Math.round((wx + wy) / 2 - wz), d = wx + wy + wz;
+      const cur = zb.get(py * 4096 + px);
+      if (!cur || cur.d - d > 1.6 * Math.max(1, sc * 2)) return;
+      cur.c = color; cur.feat = 1;
+      if (h2) { const c2 = zb.get((py + 1) * 4096 + px); if (c2) { c2.c = color; c2.feat = 1; } }
+    };
+    const eyes = Pz.eyes || o.eyes || "open";
+    const big = sc >= 0.62;
+    for (const sd of [-1, 1]) {
+      const e = [hd.x + r * 0.84, hd.y - r * 0.05, sd * r * 0.4];
+      if (eyes === "closed" || eyes === "happy" || eyes === "half") feat([e[0], e[1] + 0.6, e[2]], pal.K, false);
+      else feat(e, bo.iris ? pal.G || pal.E : pal.E, big || eyes === "wide");
+      if (o.blush) feat([hd.x + r * 0.6, hd.y + r * 0.45, sd * r * 0.65], pal.P, false);
+    }
+    feat([hd.x + r * 1.0, hd.y + r * 0.2, 0], pal.N, false);
+    // เส้นขอบ: รอบตัว = K, ขอบซ้อนด้านใน = เข้มลง
+    const out = [];
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const p of zb.values()) {
+      let c = p.c;
+      if (!p.feat) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const q = zb.get((p.py + dy) * 4096 + p.px + dx);
+        if (q && q.d - p.d > 3.2 * Math.max(0.6, sc)) { c = mix(c, pal.K, 0.6); break; }
+      }
+      out.push([p.px, p.py, c]);
+      x0 = Math.min(x0, p.px); x1 = Math.max(x1, p.px); y0 = Math.min(y0, p.py); y1 = Math.max(y1, p.py);
+    }
+    for (const p of [...zb.values()]) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const k = (p.py + dy) * 4096 + p.px + dx;
+      if (!zb.has(k)) { zb.set(k, { d: -1e9, px: p.px + dx, py: p.py + dy, c: pal.K, ol: 1 }); out.push([p.px + dx, p.py + dy, pal.K]); }
+    }
+    const [hx, hy, hz] = toW(hd.x, hd.y - r, 0);
+    return { pix: out, x0: x0 - 1, y0: y0 - 1, x1: x1 + 1, y1: y1 + 1, head: [Math.round(hx - hy), Math.round((hx + hy) / 2 - hz)] };
   }
 
-  return { catCells, renderScene, breedOpts, catPalette, POSES, W, H, PROPS };
+  // ---------- ฉากไดโอรามา ----------
+  const SKY = (hour) => hour < 5 || hour >= 20 ? { top: "#10142E", bot: "#2A2752", night: 1 }
+    : hour < 7 ? { top: "#3B3F7A", bot: "#F4B08C", dawn: 1 }
+      : hour < 17 ? { top: "#8CCBFF", bot: "#E9F6FF" }
+        : { top: "#3D3A78", bot: "#FFAE73", dawn: 1 };
+  const ROOM = { wallL: "#F3E2C4", wallR: "#E7CDA8", cap: "#B97A4C", capSide: "#8E5534", base: "#B98257", floor: "#D39A62", plank: "#B9804B", slab: "#9A5F35",
+    soil: "#6E4A30", soil2: "#5A3B27", stone: "#8C7462", grass: "#86B84E", grass2: "#6E9F3E", grassSide: "#5C8F33", water: "#5BC0F0", water2: "#3D97D6", waterHi: "#C9F1FF" };
+  const staticCache = new Map();
+
+  function renderScene(P0, S) {
+    const { w, h } = S, hour = S.hour, sky = SKY(hour), night = !!sky.night;
+    const T = Math.max(5, Math.round(h * 0.1)), Hw = Math.max(12, Math.round(h * 0.29));
+    const SS = Math.min(Math.floor((h - Hw - T - 3) * 2), w - 6);
+    const A = Math.round(SS * 0.55), Bd = SS - A, k = SS / 110;
+    const spare = w - SS;
+    const gap0 = Math.round(4 + 6 * k), twoIsl = spare > SS * 1.3;
+    const isl0 = Math.min(Math.round(SS * 0.62), Math.floor((spare - 8 - gap0 * (twoIsl ? 2 : 1)) / (twoIsl ? 2 : 1)));
+    const isl = isl0 >= 34 ? isl0 : 0;
+    // เกาะสวนข้างห้อง (โลกเดียวกัน) แล้วจัดกึ่งกลางทั้งภาพ
+    const gap = gap0, ia = Math.round(isl * 0.55), ib = isl - ia;
+    // เลื่อนเกาะตามแนว (1,1) ให้กึ่งกลางสูงพอๆ กับพื้นห้อง (ลอยขึ้นนิดหน่อย)
+    const d1 = Math.round(SS / 4 - (A + gap + (ia - ib) / 2) / 2) - 3, d2 = Math.round(SS / 4 - (Bd + gap + (ia - ib) / 2) / 2) - 3;
+    const I1 = isl ? { x: A + gap + d1, y: -ib + d1, a: ia, b: ib } : null;
+    const I2 = isl && twoIsl ? { x: -ia + d2, y: Bd + gap + d2, a: ib, b: ia } : null;
+    let mnX = -Bd, mxX = A;
+    if (I1) mxX = Math.max(mxX, I1.x + I1.a - I1.y);
+    if (I2) mnX = Math.min(mnX, I2.x - I2.y - I2.b);
+    const ox = Math.round((w - (mxX - mnX)) / 2) - mnX, oy = Math.round((h - (SS / 2 + Hw + T)) / 2) + Hw + 1;
+    const sc = clamp(SS / 165, 0.36, 0.72);
+    const X = (x, y) => ox + x - y, Y = (x, y, z) => oy + (x + y) / 2 - z;
+    // ทางเดินแมว (สี่เหลี่ยมบนพรม)
+    const path = { x0: Math.round(A * 0.36), x1: Math.round(A * 0.86), y0: Math.round(Bd * 0.36), y1: Math.round(Bd * 0.84) };
+    const desk = { x: 1, y: Math.round(Bd * 0.12), dx: Math.max(6, Math.round(9 * k)), dy: Math.max(10, Math.round(17 * k)), h: Math.max(5, Math.round(9 * k)) };
+    const bed = { x: 1, dx: Math.max(10, Math.round(15 * k)), dy: Math.max(12, Math.round(19 * k)), h: Math.max(3, Math.round(4 * k)) };
+    bed.y = Bd - bed.dy - 1;
+    const bowl = { x: Math.round(A * 0.62), y: Bd - Math.max(3, Math.round(4 * k)) };
+
+    // ---------- เลเยอร์นิ่ง (cache) ----------
+    const key = [w, h, Math.floor(hour), S.chartUp !== false, S.activity === "watchUS"].join("|");
+    let base = staticCache.get(key);
+    if (!base) {
+      const fb = new Array(w * h).fill(null);
+      const put = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (c && x >= 0 && y >= 0 && x < w && y < h) fb[y * w + x] = c; };
+      const face = (o, a, b, na, nb, fn) => {
+        for (let u = 0; u <= na + 1e-6; u += 0.5) for (let v = 0; v <= nb + 1e-6; v += 0.5) {
+          const x = o[0] + a[0] * u + b[0] * v, y = o[1] + a[1] * u + b[1] * v, z = o[2] + a[2] * u + b[2] * v;
+          const c = typeof fn === "function" ? fn(u, v) : fn;
+          if (c) put(X(x, y), Y(x, y, z), c);
+        }
+      };
+      const line = (p, q, c) => {
+        const n = Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) * 3) || 1;
+        for (let i = 0; i <= n; i++) { const t2 = i / n, x = lerp(p[0], q[0], t2), y = lerp(p[1], q[1], t2), z = lerp(p[2], q[2], t2); put(X(x, y), Y(x, y, z), c); }
+      };
+      const box = (x, y, z, dx, dy, dz, top, left, right, ol) => {
+        face([x, y, z + dz], [1, 0, 0], [0, 1, 0], dx, dy, top);
+        face([x, y + dy, z], [1, 0, 0], [0, 0, 1], dx, dz, left);
+        face([x + dx, y, z], [0, 1, 0], [0, 0, 1], dy, dz, right);
+        if (ol) {
+          const e = [[[x, y, z + dz], [x + dx, y, z + dz]], [[x, y, z + dz], [x, y + dy, z + dz]], [[x, y + dy, z], [x, y + dy, z + dz]], [[x + dx, y, z], [x + dx, y, z + dz]],
+            [[x, y + dy, z], [x + dx, y + dy, z]], [[x + dx, y, z], [x + dx, y + dy, z]]];
+          for (const [p, q] of e) line(p, q, ol);
+          line([x, y + dy, z + dz], [x + dx, y + dy, z + dz], shade(typeof top === "string" ? top : "#999999", 0.35));
+          line([x + dx, y, z + dz], [x + dx, y + dy, z + dz], shade(typeof top === "string" ? top : "#999999", 0.35));
+        }
+      };
+      const tri = (c1, c2, c3) => ({ top: c1, left: c2, right: c3 });
+      const B3 = (x, y, z, dx, dy, dz, c, ol = "#3B2418") => box(x, y, z, dx, dy, dz, c.top, c.left, c.right, ol);
+      const soilFn = (len, depth, lip, lipC) => (u, v) => {
+        const vv = depth - v; // จากผิวลงไป
+        if (vv < lip) return lipC;
+        if (vv < lip + 0.6) return mix(lipC, "#2A1A12", 0.45);
+        const n = hash(Math.floor(u / 2), Math.floor((v + Math.sin(u * 0.4) * 1.2) / 1.5), 7);
+        if (n > 0.93) return ROOM.stone;
+        return Math.floor(v + Math.sin(u * 0.35) * 1.3) % 4 === 0 ? ROOM.soil2 : ROOM.soil;
+      };
+
+      // ===== เกาะสวน (อ้างอิงไดโอรามาแบบตัดดิน) =====
+      function island(ix, iy, a, b, kind) {
+        const hz = -2; // หญ้าต่ำกว่าพื้นห้องนิดหนึ่ง
+        const pond = kind === "pond" ? { x: a * 0.42, y: b * 0.38 } : null;
+        const inPond = (u, v) => pond && u >= pond.x && v >= pond.y;
+        face([ix, iy, hz], [1, 0, 0], [0, 1, 0], a, b, (u, v) => {
+          if (inPond(u, v)) {
+            if (u < pond.x + 1 || v < pond.y + 1) return ROOM.stone;
+            const lily = hash(Math.floor(u / 3), Math.floor(v / 3), 3) > 0.86;
+            return lily ? "#4E9A3A" : (Math.floor(u + v * 2) % 9 === 0 ? ROOM.waterHi : ROOM.water);
+          }
+          const n = hash(Math.floor(u), Math.floor(v), 11);
+          return n > 0.97 ? (n > 0.985 ? "#FFE36A" : "#FF8FB0") : n > 0.82 ? ROOM.grass2 : ROOM.grass;
+        });
+        face([ix, iy + b, hz - T - 2], [1, 0, 0], [0, 0, 1], a, T + 2, (u, v) => (pond && u >= pond.x ? (Math.floor(u) % 3 === 0 && hash(Math.floor(u), Math.floor(v / 2), 4) > 0.4 ? ROOM.water : ROOM.water2) : soilFn(a, T + 2, 1.5, ROOM.grassSide)(u, v)));
+        face([ix + a, iy, hz - T - 2], [0, 1, 0], [0, 0, 1], b, T + 2, (u, v) => (pond && u >= pond.y ? shade(ROOM.water2, -0.12) : shade(soilFn(b, T + 2, 1.5, ROOM.grassSide)(u, v), -0.12)));
+        line([ix, iy + b, hz], [ix + a, iy + b, hz], ROOM.grassSide);
+        if (kind === "pond") {
+          // เสาโคมไฟ + โคมแดง
+          const lx = ix + Math.round(a * 0.18), ly = iy + Math.round(b * 0.22), ph = Math.max(8, Math.round(Hw * 0.55));
+          box(lx, ly, hz, 1.5, 1.5, ph, "#8E5534", "#7A4A2A", "#5E3820", "#3B2418");
+          box(lx - 1, ly - 1, hz + ph, 3.5, 3.5, 4, "#5E3820", (u, v) => (u > 0.8 && u < 2.7 && v > 0.8 && v < 3.2 ? "#FFD27A" : "#E2464F"), (u, v) => (u > 0.8 && u < 2.7 && v > 0.8 && v < 3.2 ? "#F2B24E" : "#B5323B"), "#3B2418");
+          box(lx - 1.5, ly - 1.5, hz + ph + 4, 4.5, 4.5, 1, "#5E3820", "#4A2C18", "#3B2418", null);
+          // ไห + พุ่มไม้
+          box(ix + a * 0.12, iy + b * 0.62, hz, 3, 3, 3, "#E39A3A", "#C77E28", "#A0631C", "#3B2418");
+          box(ix + a * 0.5, iy + 1, hz, 4, 4, 3, "#5FA348", "#4E8E3A", "#3E762E", "#2A4A1E");
+        } else {
+          // ต้นไม้ทรงลูกบาศก์ + กล่องไปรษณีย์
+          const tx = ix + Math.round(a * 0.35), ty = iy + Math.round(b * 0.3), th2 = Math.max(6, Math.round(Hw * 0.45));
+          box(tx, ty, hz, 2, 2, th2, "#8E5534", "#7A4A2A", "#5E3820", "#3B2418");
+          const cs = Math.max(7, Math.round(10 * k));
+          box(tx - cs / 2 + 1, ty - cs / 2 + 1, hz + th2, cs, cs, cs * 0.8, (u, v) => (hash(Math.floor(u), Math.floor(v), 5) > 0.8 ? "#9BD066" : "#7DBA52"),
+            (u, v) => (hash(Math.floor(u), Math.floor(v), 6) > 0.85 ? "#7DBA52" : "#5E9E3E"), (u, v) => (hash(Math.floor(u), Math.floor(v), 8) > 0.85 ? "#5E9E3E" : "#467E2E"), "#2A4A1E");
+          box(tx - cs / 2 + 3, ty - cs / 2 + 3, hz + th2 + cs * 0.8, cs - 4, cs - 4, cs * 0.45, "#9BD066", "#6FAE48", "#518E36", "#2A4A1E");
+          box(ix + a * 0.72, iy + b * 0.66, hz, 2.5, 2.5, 6, "#E2464F", "#C7353F", "#9E2A3A", "#3B2418");
+          box(ix + a * 0.15, iy + b * 0.75, hz, 3, 2, 1.5, "#B0A090", "#9A8A7A", "#857565", null);
+        }
+      }
+      if (I1) island(I1.x, I1.y, I1.a, I1.b, "pond");
+      if (I2) island(I2.x, I2.y, I2.a, I2.b, "tree");
+
+      // ===== ห้อง =====
+      // ฐานดิน + พื้นไม้
+      face([0, Bd, -T], [1, 0, 0], [0, 0, 1], A, T, soilFn(A, T, 2.5, ROOM.slab));
+      face([A, 0, -T], [0, 1, 0], [0, 0, 1], Bd, T, (u, v) => shade(soilFn(Bd, T, 2.5, ROOM.slab)(u, v), -0.14));
+      face([0, 0, 0], [1, 0, 0], [0, 1, 0], A, Bd, (u, v) => (Math.floor(v) % 5 === 0 ? ROOM.plank : (Math.floor(u + Math.floor(v / 5) * 7) % 13 === 0 ? ROOM.plank : ROOM.floor)));
+      // ผนังซ้าย (x=0) + ผนังขวา (y=0)
+      face([0, 0, 0], [0, 1, 0], [0, 0, 1], Bd, Hw, (u, v) => (v < 2 ? ROOM.base : Math.floor(u / 3) % 2 ? ROOM.wallL : mix(ROOM.wallL, "#E8CFA5", 0.5)));
+      face([0, 0, 0], [1, 0, 0], [0, 0, 1], A, Hw, (u, v) => (v < 2 ? shade(ROOM.base, -0.1) : ROOM.wallR));
+      face([-2, 0, Hw], [1, 0, 0], [0, 1, 0], 2, Bd, ROOM.cap);
+      face([0, -2, Hw], [1, 0, 0], [0, 1, 0], A, 2, ROOM.cap);
+      face([-2, -2, Hw], [1, 0, 0], [0, 1, 0], 2, 2, ROOM.cap);
+      face([-2, Bd, -T], [1, 0, 0], [0, 0, 1], 2, Hw + T, (u, v) => (v < T ? soilFn(2, T, 2.5, ROOM.slab)(u, v) : ROOM.capSide));
+      face([A, -2, -T], [0, 1, 0], [0, 0, 1], 2, Hw + T, (u, v) => (v < T ? shade(soilFn(2, T, 2.5, ROOM.slab)(u, v), -0.14) : shade(ROOM.capSide, -0.1)));
+      line([0, 0, 0], [0, 0, Hw], mix(ROOM.wallL, "#7A4A2A", 0.35));
+      // หน้าต่างผนังขวา: ท้องฟ้าตามเวลา
+      const wx0 = Math.round(A * 0.44), ww = Math.max(10, Math.round(A * 0.32)), wz0 = Math.round(Hw * 0.36), wh = Math.max(7, Math.round(Hw * 0.5));
+      face([wx0, 0, wz0], [1, 0, 0], [0, 0, 1], ww, wh, (u, v) => {
+        if (u < 1 || v < 1 || u > ww - 1 || v > wh - 1 || Math.abs(u - ww / 2) < 0.5 || Math.abs(v - wh / 2) < 0.5) return "#7A4A2A";
+        const kk = 1 - v / wh;
+        let c = mix(sky.top, sky.bot, clamp(kk * 1.1, 0, 1));
+        if (night && hash(Math.floor(u), Math.floor(v), 9) > 0.93) c = "#FFFFFF";
+        const sx2 = ww * 0.72, sz2 = wh * 0.72;
+        if (Math.hypot(u - sx2, (v - sz2) * 1.2) < (night ? 1.8 : 2.2)) c = night ? "#FFE9A8" : "#FFD84A";
+        return c;
+      });
+      box(wx0 - 1, 0, wz0 - 1.5, ww + 2, 2.5, 1.2, "#C98E5A", "#B07A4C", "#8E5A34", null);
+      // โปสเตอร์กราฟบนผนังซ้าย
+      const py0 = desk.y + 2, pw = Math.max(7, Math.round(desk.dy * 0.6)), pz0 = Math.round(Hw * 0.55), ph2 = Math.max(5, Math.round(Hw * 0.3));
+      face([0, py0, pz0], [0, 1, 0], [0, 0, 1], pw, ph2, (u, v) => {
+        if (u < 1 || v < 1 || u > pw - 1 || v > ph2 - 1) return "#5E3820";
+        const gv = 1.2 + (u / pw) * (ph2 - 3) + Math.sin(u * 1.7) * 0.9;
+        return Math.abs(v - gv) < 0.6 ? "#23994A" : "#FFF8E8";
+      });
+      // ชั้นหนังสือ (ผนังขวา)
+      const shx = Math.max(3, Math.round(A * 0.1)), shw = Math.max(7, Math.round(11 * k)), shd = Math.max(3, Math.round(4 * k)), shh = Math.round(Hw * 0.66);
+      box(shx, 0, 0, shw, shd, shh, "#A8693E", (u, v) => {
+        const lv = Math.floor(v / (shh / 3));
+        if (u < 1 || u > shw - 1 || v % (shh / 3) < 1 || v > shh - 1) return "#8E5534";
+        const bk = Math.floor(u / 1.5), n = hash(bk, lv, 4);
+        if (n > 0.85) return "#6B3E22";
+        return ["#E2464F", "#5BC0F0", "#F2C14E", "#86B84E", "#F3E2C4", "#B576D9"][Math.floor(n * 6)];
+      }, "#6B3E22", "#3B2418");
+      // ต้นไม้กระถาง มุมขวา
+      const plx = A - Math.max(6, Math.round(8 * k)), pls = Math.max(4, Math.round(5 * k));
+      box(plx, 1, 0, pls, pls, pls * 0.9, "#5E3820", "#D9824A", "#B5683A", "#3B2418");
+      box(plx - 1, 0, pls * 0.9, pls + 2, pls + 2, pls * 1.2, (u, v) => (hash(Math.floor(u), Math.floor(v), 2) > 0.7 ? "#9BD066" : "#6FAE48"), "#5E9E3E", "#467E2E", "#2A4A1E");
+      box(plx + 0.5, 1.5, pls * 2.1, pls - 1, pls - 1, pls * 0.7, "#9BD066", "#6FAE48", "#518E36", "#2A4A1E");
+      // พรม
+      face([path.x0 - 3, path.y0 - 3, 0], [1, 0, 0], [0, 1, 0], path.x1 - path.x0 + 6, path.y1 - path.y0 + 6, (u, v) => {
+        const W2 = path.x1 - path.x0 + 6, H2 = path.y1 - path.y0 + 6;
+        if (u < 1.5 || v < 1.5 || u > W2 - 1.5 || v > H2 - 1.5) return "#C0603A";
+        return (Math.floor(u / 3) + Math.floor(v / 3)) % 2 ? "#F0B27A" : "#E89A6A";
+      });
+      // เตียง (ผนังซ้ายด้านหน้า)
+      box(bed.x, bed.y, 0, bed.dx, bed.dy, bed.h, "#8E5534", "#7A4A2A", "#5E3820", "#3B2418");
+      box(bed.x, bed.y, bed.h, bed.dx, bed.dy, 2, (u, v) => (v > bed.dy * 0.38 ? ((Math.floor(u / 2) + Math.floor(v / 2)) % 2 ? "#7FB2E5" : "#9CC6F0") : "#FFF8E8"),
+        (u) => (Math.floor(u / 2) % 2 ? "#6A9BD0" : "#7FB2E5"), (u) => (u > bed.dy * 0.38 ? "#5A88BC" : "#E6DCC8"), "#3B2418");
+      box(bed.x + 1.5, bed.y + 1.5, bed.h + 2, bed.dx - 3, Math.max(3, bed.dy * 0.22), 1.5, "#FFFFFF", "#EDE4D6", "#D9CDB9", "#8A6E57");
+      box(-0.5, bed.y, 0, 1.5, bed.dy, bed.h + 7 * k, "#A8693E", "#8E5534", "#6B3E22", "#3B2418");
+      // โต๊ะทำงาน + แล็ปท็อป (จอหันมาหาแมว/เรา)
+      const dk = desk;
+      box(dk.x, dk.y, dk.h - 1.2, dk.dx, dk.dy, 1.2, "#C98E5A", "#A8693E", "#8E5534", "#3B2418");
+      for (const [lx2, ly2] of [[dk.dx - 1.5, 0.3], [dk.dx - 1.5, dk.dy - 1.5]]) box(dk.x + lx2, dk.y + ly2, 0, 1.2, 1.2, dk.h - 1.2, "#8E5534", "#7A4A2A", "#5E3820", null);
+      const lpx = dk.x + 1, lpy = dk.y + Math.round(dk.dy * 0.22), lpw = Math.max(6, Math.round(dk.dy * 0.6)), lph = Math.max(4, Math.round(5.5 * k));
+      box(lpx + 0.5, lpy, dk.h, Math.max(3, dk.dx * 0.55), lpw, 0.6, "#9AA0B4", "#7A8096", "#5A6076", null);
+      const up = S.chartUp !== false, cc = up ? "#5BE38A" : "#FF6B7A";
+      face([lpx, lpy, dk.h + 0.6], [0, 1, 0], [0, 0, 1], lpw, lph, (u, v) => {
+        if (u < 0.6 || v < 0.6 || u > lpw - 0.6 || v > lph - 0.6) return "#2B2B36";
+        const gv = up ? 1 + (u / lpw) * (lph - 2.5) + Math.sin(u * 2.1) * 0.6 : lph - 1.5 - (u / lpw) * (lph - 2.5) + Math.sin(u * 2.1) * 0.6;
+        return Math.abs(v - gv) < 0.55 ? cc : "#141A2A";
+      });
+      if (S.activity === "watchUS") box(dk.x + dk.dx - 3, dk.y + dk.dy - 3.5, dk.h, 2, 2, 2.2, "#F4E9D2", "#E6D6B8", "#C9B48E", "#3B2418");
+      // โคมไฟตั้งพื้น
+      const lmx = 2, lmy = Math.round((dk.y + dk.dy + bed.y) / 2);
+      box(lmx, lmy, 0, 1, 1, Hw * 0.55, "#5E3820", "#4A2C18", "#3B2418", null);
+      box(lmx - 1.5, lmy - 1.5, Hw * 0.55, 4, 4, 3, "#FFE38A", "#F2C14E", "#D9A23A", "#7A4A2A");
+      // ชามข้าว
+      const bs = Math.max(3.5, 4.5 * k);
+      box(bowl.x, bowl.y, 0, bs, bs, 1.8, (u, v) => (u > 0.8 && v > 0.8 && u < bs - 0.8 && v < bs - 0.8 ? "#C8782E" : "#E2464F"), "#E2464F", "#B5323B", "#5A1E26");
+      if (k > 0.8) face([bowl.x + 1, bowl.y + 1, 2], [1, 0, 0], [0, 1, 0], bs - 2, bs - 2, (u, v) => ((Math.floor(u * 2) + Math.floor(v * 2)) % 3 ? "#E8A050" : "#B8642A"));
+
+      // กลางคืน: ห้องมืดลง + แสงไฟอุ่น
+      if (night || sky.dawn) {
+        const amt = night ? 0.4 : 0.14, tint = night ? "#1B1840" : "#3A2A50";
+        for (let i = 0; i < fb.length; i++) if (fb[i]) fb[i] = mix(fb[i], tint, amt);
+        const glow = (gx, gy, rad, col, a) => {
+          for (let y = Math.floor(gy - rad); y <= gy + rad; y++) for (let x = Math.floor(gx - rad * 1.6); x <= gx + rad * 1.6; x++) {
+            if (x < 0 || y < 0 || x >= w || y >= h) continue;
+            const dd = Math.hypot((x - gx) / 1.6, y - gy) / rad;
+            if (dd > 1 || !fb[y * w + x]) continue;
+            fb[y * w + x] = mix(fb[y * w + x], col, a * (dd < 0.5 ? 1 : dd < 0.8 ? 0.6 : 0.3));
+          }
+        };
+        if (night) {
+          glow(X(lmx, lmy), Y(lmx, lmy, Hw * 0.55 + 2), 14 * k + 4, "#FFD27A", 0.35);
+          glow(X(lpx, lpy + lpw / 2), Y(lpx, lpy + lpw / 2, dk.h + lph / 2), 7 * k + 2, "#9FD0FF", 0.16);
+          if (I1) { const lx = I1.x + Math.round(I1.a * 0.18), ly = I1.y + Math.round(I1.b * 0.22); glow(X(lx, ly), Y(lx, ly, Math.max(8, Math.round(Hw * 0.55)) - 2 + 2), 10 * k + 3, "#FF9A6A", 0.4); }
+        }
+      }
+      base = { fb };
+      if (staticCache.size > 8) staticCache.clear();
+      staticCache.set(key, base);
+    }
+
+    // ---------- เลเยอร์เคลื่อนไหว ----------
+    const fb = base.fb.slice();
+    const put = (x, y, c, a) => {
+      x = Math.round(x); y = Math.round(y);
+      if (!c || x < 0 || y < 0 || x >= w || y >= h) return;
+      const i = y * w + x;
+      fb[i] = a == null || a >= 1 ? c : mix(fb[i] || skyAt(x, y), c, a);
+    };
+    const Pd = (x, y, ww, hh, c, a) => { for (let yy = 0; yy < hh; yy++) for (let xx = 0; xx < ww; xx++) put(x + xx, y + yy, c, a); };
+    const pr = (name, x, y, flip) => prop(Pd, name, x, y, flip);
+    function skyAt(x, y) {
+      const kk = y / h;
+      let c = mix(sky.top, sky.bot, Math.floor(kk * 6) / 6);
+      if (night && hash(x, y, 1) > 0.993) c = hash(x, y, 2) > 0.5 ? "#FFFFFF" : "#B9CCFF";
+      return c;
+    }
+
+    const A2 = S.activity, t = S.t, ft = S.ft ?? t;
+    const pal = catPalette(S.catColor);
+    const moodEyes = S.mood === "sad" ? "half" : S.mood === "happy" || S.mood === "wow" ? "happy" : "open";
+    let pose = "sit", o = { eyes: moodEyes }, dir = 0, cx = (path.x0 + path.x1) / 2, cy = (path.y0 + path.y1) / 2, cz = 0;
+    const around = (u) => { // ตำแหน่งบนเส้นรอบพรม u∈[0,1)
+      const L1 = path.x1 - path.x0, L2 = path.y1 - path.y0, per = 2 * (L1 + L2);
+      let d = (((u % 1) + 1) % 1) * per;
+      if (d < L1) return [path.x0 + d, path.y0, 0]; d -= L1;
+      if (d < L2) return [path.x1, path.y0 + d, 1]; d -= L2;
+      if (d < L1) return [path.x1 - d, path.y1, 2]; d -= L1;
+      return [path.x0, path.y1 - d, 3];
+    };
+    const extras = [], pre = [];
+    if (A2 === "watchTH" || A2 === "watchUS" || A2 === "ready") {
+      pose = "work"; dir = 2; o = { eyes: S.mood === "sad" ? "half" : "open", type: A2 !== "ready" };
+      cx = desk.x + desk.dx + Math.round(8 * sc + 2); cy = desk.y + desk.dy * 0.5;
+    } else if (A2 === "eat") {
+      pose = "eat"; o = {}; dir = 1; cx = bowl.x + 1.5; cy = bowl.y - Math.round(12 * sc);
+    } else if (A2 === "sleep") {
+      pose = "sleep"; dir = 1; cx = bed.x + bed.dx * 0.5; cy = bed.y + bed.dy * 0.35; cz = bed.h + 2;
+    } else if (A2 === "butterfly" || A2 === "zoomies" || A2 === "walk" || A2 === "yarn") {
+      const sp = A2 === "zoomies" ? 2 : 1, u = t * sp;
+      const [x, y, d] = around(u); cx = x; cy = y; dir = d;
+      pose = A2 === "walk" || A2 === "yarn" ? "walk" : "run";
+      if (A2 === "butterfly") {
+        const [bx, by] = around(u + 0.07), bz = 16 * sc + 8 + Math.sin(ft * TAU * 2) * 2;
+        extras.push(() => pr(Math.floor(ft * 6) % 2 ? "fly1" : "fly2", X(bx, by) - 2, Y(bx, by, bz) - 2));
+        if (Math.abs(((u * 4) % 1) - 0.5) > 0.44) pose = "pounce";
+      }
+      if (A2 === "yarn") { const [yx, yy] = around(u + 0.08); (d >= 2 ? pre : extras).push(() => pr("yarn", X(yx, yy) - 2, Y(yx, yy, 0) - 4)); }
+      if (A2 === "zoomies") for (let i = 0; i < 4; i++) extras.push(() => pr("coin", (S.seed * 7 + i * 23 + t * 60) % (w - 4), (i * 7 + t * h * 2) % (h - 6)));
+    } else if (A2 === "stretch") { pose = "stretch"; o = {}; dir = 1; }
+    else if (A2 === "groom") { pose = "sit"; o = { groom: true }; dir = 0; }
+    else if (A2 === "watchFly") {
+      pose = "sit"; o = { lookUp: true, eyes: "wide" }; dir = 0;
+      extras.push(() => pr(Math.floor(ft * 6) % 2 ? "fly1" : "fly2", X(cx, cy) + 6 + Math.sin(t * TAU) * 4, Y(cx, cy, 0) - 20 * sc - 6 + Math.cos(t * TAU * 2) * 2));
+    } else if (A2 === "sulk") { pose = "loaf"; dir = 2; o = { eyes: "half" }; }
+    else if (A2 === "loaf") { pose = "loaf"; dir = 1; o = { eyes: moodEyes }; }
+    else { pose = "sit"; dir = 1; o = { eyes: moodEyes }; }
+    if (S.sleepy && (A2 === "watchUS" || A2 === "watchTH")) o.eyes = "half";
+    if (S.mood === "happy" && pose !== "sleep") o.blush = 1;
+
+    // เงาใต้ตัว
+    const sx0 = X(cx, cy), sy0 = Y(cx, cy, cz);
+    const shr = 7 * sc + 2;
+    for (let y = -Math.ceil(shr / 2); y <= shr / 2; y++) for (let x = -Math.ceil(shr * 1.4); x <= shr * 1.4; x++) {
+      if ((x * x) / (shr * shr * 1.9) + (y * y) / (shr * shr * 0.24) <= 1) put(sx0 + x, sy0 + y, "#2A1630", night ? 0.18 : 0.22);
+    }
+    for (const f of pre) f();
+    const spr = catSprite(pose, ft, S.catColor, dir, sc, o);
+    const tintC = night ? "#1B1840" : null;
+    for (const [x, y, c] of spr.pix) put(sx0 + x, sy0 + y, tintC ? mix(c, tintC, 0.22) : c);
+    for (const f of extras) f();
+    const hx = sx0 + spr.head[0], hy = sy0 + spr.head[1];
+    if (A2 === "sleep") { const zt = Math.floor(t * 3); for (let i = 0; i <= zt; i++) pr("z", hx + 3 + i * 3, hy - 4 - i * 4); }
+    if (S.mood === "happy" && A2 !== "sleep") pr("heart", hx + 4, hy - 7 + Math.round(Math.sin(t * TAU * 2)));
+    if (S.mood === "sad" && (A2 === "watchTH" || A2 === "watchUS")) pr("sweat", hx - 5, hy - 2);
+    if (A2 === "sulk") pr("cloud", hx - 4, hy - 10);
+    if (S.mood === "wow" && A2 !== "zoomies" && A2 !== "sleep") for (let i = 0; i < 3; i++) pr("coin", hx - 9 + i * 6, hy - 10 + ((Math.floor(t * 6) + i) % 3));
+    // น้ำกระเพื่อมเล็กน้อย
+    // วาดออกจอ (รวมช่วงสีเดียวกันเป็นสี่เหลี่ยมเดียว)
+    for (let y = 0; y < h; y++) {
+      let x = 0;
+      while (x < w) {
+        const c = fb[y * w + x] || skyAt(x, y);
+        let x2 = x + 1;
+        while (x2 < w && (fb[y * w + x2] || skyAt(x2, y)) === c) x2++;
+        P0(x, y, x2 - x, 1, c);
+        x = x2;
+      }
+    }
+    return { catX: sx0, face: dir === 1 || dir === 2 ? -1 : 1 };
+  }
+
+  return { catCells, catSprite, renderScene, breedOpts, catPalette, POSES, W, H, PROPS };
 }
 // @shared-end
 const CAT_ENGINE = makeCatEngine(SPR);
 // วาดฉากห้องแมวเป็นภาพสำหรับ widget (widget ขยับเองไม่ได้ จึงเปลี่ยนท่า/ตำแหน่งทุกครั้งที่รีเฟรช)
-function sceneImage(S, act, settings, wPt, hPt, ptPerCell = 2) {
-  const cw = Math.floor(wPt / ptPerCell), ch = Math.floor(hPt / ptPerCell), px = 6;
+function sceneImage(S, act, settings, wPt, hPt, ptPerCell = 1) {
+  const cw = Math.floor(wPt / ptPerCell), ch = Math.floor(hPt / ptPerCell), px = 3;
   const dc = newCtx(cw * px, ch * px);
   const P = (x, y, w, h, hex, a) => { if (w <= 0 || h <= 0) return; dc.setFillColor(col(hex, a == null || a >= 1 ? null : a)); dc.fillRect(new Rect(x * px, y * px, w * px, h * px)); };
   const sd = act.seed;
@@ -1519,7 +1891,7 @@ function animPayload(S, act, settings) {
 function animJS() {
   return `const ENGINE=(${makeCatEngine.toString()})(D.spr);
 function startScene(cv,cw,ch,A,onLine){
-  const px=6,ctx=cv.getContext('2d');cv.width=cw*px;cv.height=ch*px;ctx.imageSmoothingEnabled=false;
+  const px=3,ctx=cv.getContext('2d');cv.width=cw*px;cv.height=ch*px;ctx.imageSmoothingEnabled=false;
   const P=(x,y,w,h,c,a)=>{if(w<=0||h<=0)return;ctx.globalAlpha=a==null?1:a;ctx.fillStyle=c;ctx.fillRect(Math.round(x*px),Math.round(y*px),w*px,h*px);ctx.globalAlpha=1};
   const PER={walk:16,yarn:12,butterfly:10,zoomies:5};const FT={walk:.9,run:.45,yarn:.9,butterfly:.45,zoomies:.4,pounce:1.6,eat:1.2,sleep:4,loaf:4,groom:2,stretch:3,watchFly:3};
   let idx=0,t0=performance.now(),tap=null,lastLine='';
@@ -1563,7 +1935,7 @@ $('nm').textContent=D.name;
 $('tot').textContent='฿'+Math.round(D.total).toLocaleString('en-US');
 $('pl').textContent=(D.pl>=0?'+':'')+Math.round(D.pl).toLocaleString('en-US')+' ('+(D.plPct>=0?'+':'')+D.plPct.toFixed(2)+'%) · วันนี้ '+(D.day>=0?'+':'')+D.day.toFixed(2)+'%';
 $('mk').innerHTML=D.anim.mk.map(m=>'<div><span class="dot" style="background:'+m.c+'"></span><b>'+m.n+'</b> '+m.l+'</div>').join('');
-startScene($('room'),80,52,D.anim,(t)=>{$('say').textContent=t});
+startScene($('room'),160,104,D.anim,(t)=>{$('say').textContent=t});
 </script></body></html>`;
 }
 
@@ -1652,7 +2024,7 @@ const s=(n,d=0)=>(n>0?'+':'')+f(n,d);const p=n=>isFinite(n)?(n>0?'+':'')+n.toFix
 const cl=n=>n>=0?'up':'down';const fp=x=>{const a=Math.abs(x);return f(x,a>=1000?0:a>=1?2:a>=.01?4:8)};
 function shade(h,k){const n=parseInt(h.slice(1),16);return '#'+[n>>16&255,n>>8&255,n&255].map(v=>Math.max(0,Math.min(255,Math.round(k<0?v*(1+k):v+(255-v)*k))).toString(16).padStart(2,'0')).join('')}
 ${ANIM_JS}
-startScene($('scene'),100,50,D.anim,(t)=>{$('say').textContent=t});
+startScene($('scene'),200,100,D.anim,(t)=>{$('say').textContent=t});
 $('mk').innerHTML=D.anim.mk.map(m=>'<span><span class="dot" style="background:'+m.c+'"></span><b>'+m.n+'</b> '+m.l+'</span>').join('');$('nm').textContent='♥ '+D.name;$('age').textContent='เลี้ยงมา '+D.age+' วัน';$('say').textContent=D.line;
 $('at').textContent='⟳ '+D.at;$('total').textContent='฿'+f(D.total);
 $('pl').innerHTML='<span class="'+cl(D.pl)+'">'+s(D.pl)+' ('+p(D.plPct)+')</span>';
@@ -2036,18 +2408,17 @@ async function bitkubFlow() {
   catch (e) { await info("บันทึกแล้ว แต่เชื่อมต่อไม่สำเร็จ", String(e.message || e)); }
 }
 
-// รูปตัวอย่างแมว: หน้าตรง + ท่าเดินด้านข้าง (ใช้ในหน้าเลือกแมว)
-function catPreviewImage(breed, px = 5) {
-  const front = catGrid("happy", breed), side = CAT_ENGINE.catCells("walk", 0.25, CAT_ENGINE.breedOpts(breed));
+// รูปตัวอย่างแมว: หน้าตรง + ตัวจริงแบบ isometric (ใช้ในหน้าเลือกแมว)
+function catPreviewImage(breed, px = 4) {
+  const front = catGrid("happy", breed), iso = CAT_ENGINE.catSprite("walk", 0.25, breed, 0, 0.9, { eyes: "open" });
   const pal = Object.assign({}, SPR.fixed, SPR.palettes[breed] || SPR.palettes.orange);
-  const fw = front[0].length, sw = side[0].length, h = Math.max(front.length, side.length);
-  const dc = newCtx((fw + sw + 2) * px, h * px);
-  const draw = (g, ox, oy) => g.forEach((row, y) => row.forEach((c, x) => {
+  const fw = front[0].length, iw = iso.x1 - iso.x0 + 1, ih = iso.y1 - iso.y0 + 1, h = Math.max(front.length, ih);
+  const dc = newCtx((fw + iw + 3) * px, h * px);
+  front.forEach((row, y) => row.forEach((c, x) => {
     if (c === "." || !pal[c]) return;
-    dc.setFillColor(col(pal[c])); dc.fillRect(new Rect((ox + x) * px, (oy + y) * px, px, px));
+    dc.setFillColor(col(pal[c])); dc.fillRect(new Rect(x * px, (h - front.length + y) * px, px, px));
   }));
-  draw(front, 0, h - front.length);
-  draw(side.map((r) => (Array.isArray(r) ? r : r.split(""))), fw + 2, h - side.length);
+  for (const [x, y, c] of iso.pix) { dc.setFillColor(col(c)); dc.fillRect(new Rect((fw + 3 + x - iso.x0) * px, (h - ih + y - iso.y0) * px, px, px)); }
   return dc.getImage();
 }
 async function pickCat(current) {

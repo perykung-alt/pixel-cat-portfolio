@@ -242,7 +242,7 @@ function planRoom() {
   if (JSON.stringify(seq) !== JSON.stringify(room.seq)) { room.seq = seq; room.idx = 0; room.t0 = performance.now(); }
 }
 function startRoom() {
-  const cv = $("room"), cw = 96, ch = 52, px = 6, ctx = cv.getContext("2d");
+  const cv = $("room"), cw = 192, ch = 104, px = 3, ctx = cv.getContext("2d");
   cv.width = cw * px; cv.height = ch * px; ctx.imageSmoothingEnabled = false;
   const P = (x, y, w, h, c, a) => { if (w <= 0 || h <= 0) return; ctx.globalAlpha = a == null ? 1 : a; ctx.fillStyle = c; ctx.fillRect(Math.round(x * px), Math.round(y * px), w * px, h * px); ctx.globalAlpha = 1; };
   const PER = { walk: 16, yarn: 12, butterfly: 10, zoomies: 5 };
@@ -526,14 +526,15 @@ function renderChart() {
 // ---------- เลือกแมว (มีรูปตัวอย่าง: หน้าตรง + ท่าเดิน ตัวที่เลือกเดินได้) ----------
 let pickTimer = null;
 function drawCatPreview(cv, breed, t) {
-  const front = catGrid("happy", breed), side = ENGINE.catCells("walk", t, ENGINE.breedOpts(breed));
+  const front = catGrid("happy", breed), iso = ENGINE.catSprite("walk", t, breed, 0, 0.9, { eyes: "open" });
   const pal = Object.assign({}, SPR.fixed, SPR.palettes[breed] || SPR.palettes.orange);
-  const fw = front[0].length, sw = side[0].length, h = Math.max(front.length, side.length), px = 4;
-  cv.width = (fw + sw + 2) * px; cv.height = h * px;
+  const fw = front[0].length, iw = 31, h = 30, px = 4;
+  cv.width = (fw + iw + 3) * px; cv.height = h * px;
   const ctx = cv.getContext("2d"); ctx.clearRect(0, 0, cv.width, cv.height);
-  const draw = (g, ox, oy) => g.forEach((row, y) => row.forEach((c, x) => { if (c === "." || !pal[c]) return; ctx.fillStyle = pal[c]; ctx.fillRect((ox + x) * px, (oy + y) * px, px, px); }));
-  draw(front, 0, h - front.length);
-  draw(side, fw + 2, h - side.length);
+  front.forEach((row, y) => row.forEach((c, x) => { if (c === "." || !pal[c]) return; ctx.fillStyle = pal[c]; ctx.fillRect(x * px, (h - front.length + y) * px, px, px); }));
+  // จุดยึดคงที่ (ไม่ให้ตัวกระตุกตอนเดิน): เท้าอยู่แถวล่าง กึ่งกลางกรอบ
+  const ax = fw + 3 + 15, ay = h - 6;
+  for (const [x, y, c] of iso.pix) { ctx.fillStyle = c; ctx.fillRect((ax + x) * px, (ay + y) * px, px, px); }
 }
 function renderCatPicker() {
   const box = $("catPick"), cur = data.settings.catColor;
