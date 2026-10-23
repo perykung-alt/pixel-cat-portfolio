@@ -558,6 +558,10 @@ function renderSet() {
   renderCatPicker();
   $("sTheme").value = st.theme;
   $("sGoal").value = st.goal || "";
+  $("sNotify").checked = st.notify !== false;
+  $("notifyNote").textContent = (IN_APP ? "แอปจะส่งแจ้งเตือนเองแม้ไม่ได้เปิด" : "แจ้งเตือนอัตโนมัติใช้ได้ในแอป Android และ iPhone (widget Scriptable) · ") + " คำนวณในเครื่องทั้งหมด ไม่ใช้ AI ไม่มีค่าใช้จ่าย · ตัวอย่าง:";
+  if (S && S.rows.length) { const b = briefText(S, st, "evening"); $("briefPrev").textContent = b.title + "\n" + b.body; } else $("briefPrev").textContent = "เพิ่มพอร์ตก่อน แล้วจะเห็นตัวอย่างสรุปตรงนี้";
+  $("briefTestRow").style.display = IN_APP && AndroidBridge.testBrief ? "" : "none";
   $("about").innerHTML = `เวอร์ชัน ${VERSION} · อัปเดตเองอัตโนมัติเมื่อเปิดแอป<br>ข้อมูลพอร์ตเก็บในเบราว์เซอร์เครื่องนี้เท่านั้น (ไม่ส่งขึ้นเซิร์ฟเวอร์) — ถ้าล้างข้อมูลเบราว์เซอร์ข้อมูลจะหาย ควรสำรองไว้เป็นระยะ<br>iPhone ใช้แบบ widget ได้ผ่านแอป Scriptable · <a href="${REPO_URL}" target="_blank" rel="noopener">GitHub</a>`;
 }
 function bindSet() {
@@ -566,8 +570,10 @@ function bindSet() {
     st.catName = ($("sName").value.trim() || "ส้มจี๊ด").slice(0, 12);
     st.theme = $("sTheme").value;
     const g = num($("sGoal").value); st.goal = g > 0 ? g : 0;
+    st.notify = $("sNotify").checked;
     save(); applyTheme(); refresh(); toast("บันทึกแล้ว 🐱");
   };
+  $("briefTest").onclick = () => { pushWidget(); setTimeout(() => { try { if (!AndroidBridge.testBrief()) toast("ส่งไม่ได้ — อนุญาตการแจ้งเตือนของแอปในตั้งค่าเครื่องก่อน", 5000); } catch (e) {} }, 300); };
   $("copyPrompt").onclick = () => copyText(AI_PROMPT, "คัดลอก Prompt แล้ว ไปวางในแอป AI พร้อมแนบรูปได้เลย");
   $("aiImport").onclick = () => aiImport().catch((e) => toast("เกิดข้อผิดพลาด: " + e.message, 5000));
   const backup = () => JSON.stringify({ v: 2, data: Object.assign({}, data, { fresh: undefined }), hist });

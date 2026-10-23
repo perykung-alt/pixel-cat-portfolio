@@ -52,5 +52,8 @@ object Market {
         }
     }
 
+    fun isSetDay(d: java.time.LocalDate) = d.dayOfWeek != DayOfWeek.SATURDAY && d.dayOfWeek != DayOfWeek.SUNDAY && d.toString() !in SET_HOLIDAYS
+    fun isUsDay(d: java.time.LocalDate) = d.dayOfWeek != DayOfWeek.SATURDAY && d.dayOfWeek != DayOfWeek.SUNDAY && d.toString() !in US_HOLIDAYS
+
     fun bkkHour(): Double = ZonedDateTime.now(ZoneId.of("Asia/Bangkok")).let { it.hour + it.minute / 60.0 }
 }

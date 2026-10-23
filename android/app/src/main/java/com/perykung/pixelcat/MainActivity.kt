@@ -56,6 +56,10 @@ class MainActivity : Activity() {
         handleIntent(intent)
         if (savedInstanceState != null) web.restoreState(savedInstanceState) else web.loadUrl(APP_URL)
         checkUpdate()
+        // Android 13+: ขออนุญาตแจ้งเตือน (ใช้ส่งสรุปพอร์ตรายวัน)
+        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -129,6 +133,13 @@ class MainActivity : Activity() {
         @JavascriptInterface fun refreshWidget() { RefreshWorker.runNow(act) }
 
         @JavascriptInterface fun version(): String = BuildConfig.VERSION_NAME
+
+        /** ปุ่ม "ส่งตัวอย่าง" ในหน้าตั้งค่าของเว็บแอป */
+        @JavascriptInterface fun testBrief(): Boolean {
+            val s = Store.summary(act) ?: return false
+            val name = Store.data(act)?.optJSONObject("settings")?.optString("catName", "แมว") ?: "แมว"
+            return Brief.post(act, s, name, "now")
+        }
 
         /** Google ไม่อนุญาตให้ล็อกอินในเว็บวิว → เปิดหน้า login ใน Chrome แล้วรับ token กลับทาง pixelcat://auth */
         @JavascriptInterface fun openLogin(url: String) {

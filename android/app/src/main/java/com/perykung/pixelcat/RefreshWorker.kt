@@ -22,7 +22,9 @@ class RefreshWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
         val data = Store.data(ctx)
         if (data != null) {
             try {
-                Store.setSummary(ctx, Portfolio.refresh(ctx, data))
+                val sum = Portfolio.refresh(ctx, data)
+                Store.setSummary(ctx, sum)
+                Brief.maybe(ctx, sum, data)
             } catch (_: Exception) {
             }
         }

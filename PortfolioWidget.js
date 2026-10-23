@@ -59,7 +59,7 @@ function looksLikeThaiFund(sym) {
 }
 const TYPE_ORDER = ["thai", "us", "fund", "crypto", "gold"];
 const CAT_COLORS = { siamese: "วิเชียรมาศ (สยาม)", scottish: "สกอตทิชโฟลด์ ทับบี้", british: "บริติช น้ำตาลเข้ม", orange: "ส้มลายเสือ", gray: "เทาสลิด", black: "ดำตาเหลือง", white: "ขาวตาฟ้า", calico: "สามสี" };
-const DEFAULT_SETTINGS = { catName: "ส้มจี๊ด", catColor: "orange", theme: "auto", goal: 0, fundInfo: {}, autoUpdate: true };
+const DEFAULT_SETTINGS = { catName: "ส้มจี๊ด", catColor: "orange", theme: "auto", goal: 0, fundInfo: {}, autoUpdate: true, notify: true };
 
 // ---------- สไปรต์แมวพิกเซล ----------
 const SPR = {"base":["......................","..K..........K........",".KPK........KPK.......",".KPPK......KPPK.......","KOPPOKKKKKKOPPOK......","KOOOOODOODOOOOOK......","KOOOOOODDOOOOOOK......","KOOEEOOOOOOEEOOK......","KOOEWOOOOOOEWOOK......","KPOOOOLNNLOOOOPK......","KOOOOLKLLKLOOOOK......",".KOOOOLLLLOOOOK.......","..KKOOOOOOOOKK...KK...","..KOOOLLLLOOOK..KOOK..",".KOODLLLLLLDOOK..KOK..",".KOODLLLLLLDOOK.KOK...",".KOOOLLLLLLOOOKKOK....",".KLLKOOLLOOKLLKOOK....","ccKKKKKKKKKKKKKKKcc...","cCCCCCCCCCCCCCCCCCCc..",".cccccccccccccccccc..."],"eyes":{"normal":[["KOOEEOOOOOOEEOOK",7],["KOOEWOOOOOOWEOOK",8]],"happy":[["KOOKKOOOOOOKKOOK",7],["KOKOOKOOOOKOOKOK",8]],"sad":[["KOKOOOOOOOOOOKOK",6],["KOOKEOOOOOOEKOOK",7],["KOOEWOOOOOOWEOOK",8]],"sleep":[["KOOOOOOOOOOOOOOK",7],["KOKKKOOOOOOKKKOK",8]],"wow":[["KOOEEOODDOOEEOOK",6],["KOEEWOOOOOOEEWOK",7],["KOEEEOOOOOOEEEOK",8]]},"mouth":{"normal":["KOOOOLKLLKLOOOOK",10],"happy":["KOOOOLKLLKLOOOOK",10],"sad":["KOOOOLLKKLLOOOOK",10],"sleep":["KOOOOLLKKLLOOOOK",10],"wow":["KOOOOLLKKLLOOOOK",10]},"extra":{"sad":[[3,9,"B"],[3,10,"B"]],"wow":[[19,1,"Y"],[18,2,"Y"],[19,2,"W"],[20,2,"Y"],[17,3,"Y"],[18,3,"W"],[19,3,"W"],[20,3,"W"],[21,3,"Y"],[18,4,"Y"],[19,4,"W"],[20,4,"Y"],[19,5,"Y"]],"happy":[[17,3,"P"],[18,3,"P"],[20,3,"P"],[21,3,"P"],[17,4,"P"],[18,4,"P"],[19,4,"P"],[20,4,"P"],[21,4,"P"],[18,5,"P"],[19,5,"P"],[20,5,"P"],[19,6,"P"],[18,3,"W"]],"sleep":[[18,0,"Z"],[19,0,"Z"],[20,0,"Z"],[21,0,"Z"],[20,1,"Z"],[19,2,"Z"],[18,3,"Z"],[19,3,"Z"],[20,3,"Z"],[21,3,"Z"]]},"palettes":{"orange":{"K":"#3B2418","O":"#F59B42","D":"#C8681E","L":"#FFE3B8","P":"#FF8FA3","N":"#E85A7A","E":"#2A1A12","W":"#FFFFFF"},"gray":{"K":"#22252E","O":"#9AA3B2","D":"#6B7385","L":"#E9EDF3","P":"#FF9EB1","N":"#E2627F","E":"#14161C","W":"#FFFFFF"},"black":{"K":"#0E0E14","O":"#3A3A4A","D":"#2A2A36","L":"#5A5A70","P":"#FF8FA3","N":"#E85A7A","E":"#FFD84A","W":"#FFFFFF"},"white":{"K":"#4A3F3A","O":"#FFF8EE","D":"#F0DCC4","L":"#FFFFFF","P":"#FFA8B8","N":"#F07A93","E":"#3A6FD8","W":"#FFFFFF"},"calico":{"K":"#3A2418","O":"#FFF5E6","D":"#F28C38","L":"#FFFFFF","P":"#FF9EB1","N":"#E85A7A","E":"#2A1A12","W":"#FFFFFF"},"scottish":{"K":"#2E2620","O":"#9C8B74","D":"#55473A","L":"#FFFFFF","P":"#E9A0A8","N":"#C97B7B","E":"#1F2620","W":"#FFFFFF","G":"#93AE80"},"british":{"K":"#2A1A10","O":"#8A5A2E","D":"#5A3519","L":"#D9B88A","P":"#D9928A","N":"#B5655E","E":"#C7861A","W":"#FFF3D0"},"siamese":{"K":"#2B1D15","O":"#F1E2C6","D":"#4A3326","L":"#4A3326","M":"#FBF3E3","P":"#FF9EB1","N":"#1E140E","E":"#3D7FE0","W":"#FFFFFF","G":"#93AE80"}},"fixed":{"C":"#E2464F","c":"#9E2A3A","B":"#5BC0FF","Y":"#FFD84A","Z":"#8FB8FF","G":"#93AE80"},"breeds":{"scottish":{"rows":{"1":"................","2":"................","3":".KKK........KKK.","4":"KODOKKKKKKKKODOK","5":"KOOOODODDODOOOOK","6":"KOOOOOODDOOOOOOK","14":".KODDLLLLLLDDOK.","15":".KOOOLLLLLLOOOK."},"eyes":{"normal":[["KOOGGOODDOOGGOOK",6],["KOGEWOOOOOOWEGOK",7],["KOGEEOOOOOOEEGOK",8]],"wow":[["KOGGGOODDOOGGGOK",6],["KOGEWOOOOOOWEGOK",7],["KOGEEOOOOOOEEGOK",8]]}},"british":{"rows":{"1":"................","2":"................","3":".KK..........KK.","4":"KPPKKKKKKKKKKPPK","5":"KOOOOOODDOOOOOOK","6":"KOOOOOOOOOOOOOOK"},"eyes":{"normal":[["KOOKKOOOOOOKKOOK",7],["KOOEEOOOOOOEEOOK",8]]}},"siamese":{"rows":{"5":"KOOOOOOOOOOOOOOK","6":"KOOOOOOOOOOOOOOK"},"post":{"2":"_DD_________DD_","3":"_DDD_______DDD_","4":"__DD________DD__","9":"_O__DDD__DDD__O_","13":"______MMMM_______DD___","14":"_____MMMMMM_______D___","15":"_____MMMMMM______D____","16":"_____MMMMMM_____D_____","17":"_______________DD_____","7":"______DDDD______","8":"_____DDDDDD_____"}}}};
@@ -78,7 +78,7 @@ function catGrid(mood, breed) {
 // @shared-end
 
 // ---------- เวอร์ชัน & อัปเดตอัตโนมัติ ----------
-const VERSION = "6.4.3";
+const VERSION = "6.5.0";
 const REPO = "perykung-alt/pixel-cat-portfolio";
 const UPDATE_BASE = `https://raw.githubusercontent.com/${REPO}/main/`;
 const REPO_URL = `https://github.com/${REPO}`;
@@ -192,6 +192,24 @@ async function readJSON(path, fallback) {
   } catch (e) { return fallback; }
 }
 function writeJSON(path, obj) { fm.writeString(path, JSON.stringify(obj, null, 1)); }
+const F_NOTIFY = fm.joinPath(DIR, "notify.json");
+// ส่งแจ้งเตือนสรุปพอร์ต (เรียกทุกครั้งที่ widget/แอปรีเฟรช จะส่งแค่รอบละครั้ง)
+async function maybeBrief(S, settings, force = false) {
+  try {
+    if (!S || !S.rows || !S.rows.length || (settings.notify === false && !force)) return false;
+    const sent = await readJSON(F_NOTIFY, {});
+    const slot = force ? null : briefSlot(Date.now(), sent);
+    if (!slot && !force) return false;
+    const b = briefText(S, settings, slot || "now");
+    const n = new Notification();
+    n.title = b.title; n.body = b.body;
+    n.threadIdentifier = "pcp-brief"; n.identifier = "pcp-brief-" + (slot || "test");
+    n.openURL = URLScheme.forRunningScript();
+    await n.schedule();
+    if (slot) { sent[slot] = bkkParts(Date.now()).ymd; writeJSON(F_NOTIFY, sent); }
+    return true;
+  } catch (e) { return false; }
+}
 
 // ---------- ตัวช่วยตัวเลข / วันที่ ----------
 // @shared-begin
@@ -651,6 +669,36 @@ function catAgeDays(hist) {
   if (!hist || !hist.length) return 1;
   const first = new Date(hist[0].d + "T00:00:00");
   return Math.max(1, Math.floor((Date.now() - first.getTime()) / 864e5) + 1);
+}
+
+// ---------- แจ้งเตือนสรุปพอร์ต (คำนวณในเครื่องล้วนๆ ไม่ใช้ AI / ไม่เปลือง token) ----------
+// รอบเย็น: หลัง SET ปิด 16:45 (เฉพาะวันที่ตลาดไทยเปิด) · รอบเช้า: 07:00–12:00 หลังตลาด US ปิดเมื่อคืน
+function briefSlot(nowMs = Date.now(), sent = {}) {
+  const p = bkkParts(nowMs);
+  const setDay = p.dow >= 1 && p.dow <= 5 && !SET_HOLIDAYS.has(p.ymd);
+  if (setDay && p.min >= 16 * 60 + 45 && sent.evening !== p.ymd) return "evening";
+  const us = etParts(nowMs - 12 * 3600e3); // วันทำการ US ของ "เมื่อคืน"
+  const usDay = us.dow >= 1 && us.dow <= 5 && !US_HOLIDAYS.has(us.ymd);
+  if (usDay && p.min >= 7 * 60 && p.min < 12 * 60 && sent.morning !== p.ymd) return "morning";
+  return null;
+}
+function briefText(S, settings, slot) {
+  const nm = (settings && settings.catName) || "แมว";
+  const when = slot === "morning" ? "เช้านี้" : slot === "evening" ? "เย็นนี้" : "ล่าสุด";
+  const face = S.dayPct >= 1 ? "😸" : S.dayPct > 0 ? "😺" : S.dayPct <= -1 ? "🙀" : "🐱";
+  const title = `${face} ${nm} สรุปพอร์ต${when} · ฿${compact(S.total)}`;
+  const lines = [`${slot === "morning" ? "รอบล่าสุด" : "วันนี้"} ${signed(S.day)} ฿ (${pctStr(S.dayPct)}) · กำไรรวม ${signed(S.pl)} ฿ (${pctStr(S.plPct)})`];
+  const cs = CAT_ORDER.filter((c) => S.cats[c].value > 0).map((c) => {
+    const x = S.cats[c], prev = x.value - x.day;
+    return `${CATS[c].short} ${pctStr(prev > 0 ? (x.day / prev) * 100 : 0)}`;
+  });
+  if (cs.length) lines.push(cs.join(" · "));
+  const mv = [];
+  if (S.best) mv.push(`🚀 ${S.best.symbol} ${pctStr(S.best.dayPct)}`);
+  if (S.worst) mv.push(`🔻 ${S.worst.symbol} ${pctStr(S.worst.dayPct)}`);
+  if (mv.length) lines.push(mv.join(" · "));
+  if (S.stale) lines.push("⚠️ บางราคายังเป็นราคาเก่า");
+  return { title, body: lines.join("\n") };
 }
 
 // @shared-end
@@ -2467,10 +2515,11 @@ async function appMenu() {
     const { data, S, hist } = await loadAll();
     const st = data.settings;
     const act = catActivity(S, st);
+    if (!data.sample) await maybeBrief(S, st);
     const note = await updateNotice();
     const msg = (note ? note + "\n\n" : "") + (S ? `฿${fmt(S.total)}  ${signed(S.pl)} (${pctStr(S.plPct)})\n` : "") + `🐱 ${st.catName}: "${actLine(S, act)}"\n🇹🇭 SET ${act.M.th.label}\n🇺🇸 US ${act.M.us.label}`;
     const opts = ["🐾 ห้องแมว (แมวขยับได้)", "📊 ดูพอร์ตและกราฟ", "📸 นำเข้าจากรูปด้วย AI (หลายรายการ)", "➕ เพิ่มรายการซื้อ", "✏️ แก้ไข / ลบรายการ", "📝 อัปเดต NAV กองทุน",
-      "🐱 ตั้งค่าแมว / ธีม", "🎯 ตั้งเป้าหมายพอร์ต", "👁 พรีวิว Widget", "🔑 Bitkub API (ไม่บังคับ)", "💾 สำรอง / กู้คืนข้อมูล", `🔄 อัปเดต (v${VERSION})`, "📤 แชร์ให้เพื่อน"];
+      "🐱 ตั้งค่าแมว / ธีม", "🎯 ตั้งเป้าหมายพอร์ต", `🔔 แจ้งเตือนสรุปพอร์ต (${st.notify === false ? "ปิด" : "เปิด"})`, "👁 พรีวิว Widget", "🔑 Bitkub API (ไม่บังคับ)", "💾 สำรอง / กู้คืนข้อมูล", `🔄 อัปเดต (v${VERSION})`, "📤 แชร์ให้เพื่อน"];
     if (!data.holdings.length) opts.push("🧪 ใส่ข้อมูลตัวอย่างเพื่อทดลอง");
     if (data.sample) opts.push("🧹 ล้างข้อมูลตัวอย่าง");
     const i = await ask(`PIXEL CAT PORTFOLIO v${VERSION}`, msg, opts, "ปิด");
@@ -2484,6 +2533,13 @@ async function appMenu() {
     else if (pick.startsWith("📝")) await navFlow(data);
     else if (pick.startsWith("🐱")) await catFlow(data);
     else if (pick.startsWith("🎯")) await goalFlow(data);
+    else if (pick.startsWith("🔔")) {
+      const on = st.notify !== false;
+      const j = await ask("🔔 แจ้งเตือนสรุปพอร์ต", "แมวจะส่งสรุปสั้นๆ วันละ 2 รอบ\n• เย็น หลังตลาดหุ้นไทยปิด (16:45)\n• เช้า หลังตลาดอเมริกาปิด (7:00)\n\nคำนวณในเครื่องทั้งหมด ไม่ใช้ AI ไม่เสียค่าใช้จ่าย\n(ต้องมี widget อยู่บนหน้าจอ แจ้งเตือนจะมาตอน widget รีเฟรช อาจช้ากว่าเวลาเล็กน้อย)",
+        [on ? "🔕 ปิดแจ้งเตือน" : "🔔 เปิดแจ้งเตือน", "📨 ส่งตัวอย่างตอนนี้"]);
+      if (j === 0) { st.notify = !on; writeJSON(F_DATA, data); }
+      if (j === 1) { if (!(await maybeBrief(S, st, true))) await info("ส่งไม่ได้", S ? "อนุญาตการแจ้งเตือนของ Scriptable ใน ตั้งค่า > การแจ้งเตือน" : "เพิ่มพอร์ตก่อน"); }
+    }
     else if (pick.startsWith("🔑")) await bitkubFlow();
     else if (pick.startsWith("💾")) await backupFlow(data);
     else if (pick.startsWith("🔄")) { if ((await updateFlow(data)) === "exit") return; }
@@ -2511,6 +2567,7 @@ if (config.runsInWidget || config.runsInAccessoryWidget) {
   try {
     const { data, S, hist } = await loadAll();
     w = buildWidget(S, hist, config.widgetFamily, data.settings);
+    if (!data.sample) await maybeBrief(S, data.settings);
   } catch (e) {
     T = makeTheme("auto");
     w = new ListWidget(); w.backgroundColor = T.bg; w.setPadding(12, 12, 12, 12);
