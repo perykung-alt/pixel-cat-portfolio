@@ -30,6 +30,8 @@ class Summary(
     val holdsThai: Boolean,
     val holdsUs: Boolean,
 ) {
+    /** ราคาล่าสุดรายตัว "type:SYMBOL" → ราคา (หุ้นนอก = USD, อย่างอื่น = บาท) ใช้กับแจ้งเตือนราคา (ไม่บันทึกลงเครื่อง) */
+    var prices: Map<String, Double> = emptyMap()
     val pl get() = total - cost
     val plPct get() = if (cost > 0) pl / cost * 100 else 0.0
     val dayPct get() = if (total - day > 0) day / (total - day) * 100 else 0.0
@@ -195,8 +197,10 @@ object Portfolio {
         }
         val cats = Portfolio.CAT_ORDER.associateWith { CatSum() }
         val missing = mutableListOf<String>()
+        val native = mutableMapOf<String, Double>()
         for (g in groups.values) {
             val p = priceOf(g.type, g.sym)
+            if (p != null) native["${g.type}:${g.sym}"] = p.price
             var price = Double.NaN; var prev = Double.NaN
             if (p != null) {
                 if (g.type == "us") { price = p.price * fx.price; prev = p.prev * fx.prev } else { price = p.price; prev = p.prev }
@@ -213,6 +217,6 @@ object Portfolio {
         val fi = data.optJSONObject("settings")?.optJSONObject("fundInfo")
         val holdsThai = "thai" in types || list.any { it.optString("type") == "fund" && fi?.optJSONObject(it.optString("symbol"))?.optString("region") == "thai" }
         val holdsUs = "us" in types || list.any { it.optString("type") == "fund" && fi?.optJSONObject(it.optString("symbol"))?.optString("region") != "thai" }
-        return Summary(total, cost, day, cats, System.currentTimeMillis(), missing, holdsThai, holdsUs)
+        return Summary(total, cost, day, cats, System.currentTimeMillis(), missing, holdsThai, holdsUs).also { it.prices = native }
     }
 }

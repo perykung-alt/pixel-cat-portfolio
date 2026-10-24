@@ -134,6 +134,9 @@ class MainActivity : Activity() {
 
         @JavascriptInterface fun version(): String = BuildConfig.VERSION_NAME
 
+        /** แจ้งเตือนราคาที่แอปยิงไปแล้ว {id: เวลา} ให้เว็บปิดรายการ */
+        @JavascriptInterface fun firedAlerts(): String = Alerts.fired(act).toString()
+
         /** ปุ่ม "ส่งตัวอย่าง" ในหน้าตั้งค่าของเว็บแอป */
         @JavascriptInterface fun testBrief(): Boolean {
             val s = Store.summary(act) ?: return false

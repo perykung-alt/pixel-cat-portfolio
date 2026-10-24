@@ -78,7 +78,7 @@ function catGrid(mood, breed) {
 // @shared-end
 
 // ---------- เวอร์ชัน & อัปเดตอัตโนมัติ ----------
-const VERSION = "6.5.0";
+const VERSION = "6.5.1";
 const REPO = "perykung-alt/pixel-cat-portfolio";
 const UPDATE_BASE = `https://raw.githubusercontent.com/${REPO}/main/`;
 const REPO_URL = `https://github.com/${REPO}`;
@@ -194,6 +194,20 @@ async function readJSON(path, fallback) {
 function writeJSON(path, obj) { fm.writeString(path, JSON.stringify(obj, null, 1)); }
 const F_NOTIFY = fm.joinPath(DIR, "notify.json");
 // ส่งแจ้งเตือนสรุปพอร์ต (เรียกทุกครั้งที่ widget/แอปรีเฟรช จะส่งแค่รอบละครั้ง)
+// ยิงแจ้งเตือนราคา (บันทึกสถานะลงไฟล์ เพื่อไม่ให้แจ้งซ้ำ)
+async function maybeAlerts(data, S) {
+  try {
+    const list = checkAlerts(data, S);
+    if (!list.length) return 0;
+    writeJSON(F_DATA, data);
+    for (const x of list) {
+      const n = new Notification(); n.title = x.title; n.body = x.body; n.identifier = x.id;
+      n.threadIdentifier = "pcp-alert"; n.openURL = URLScheme.forRunningScript(); n.sound = "default";
+      await n.schedule();
+    }
+    return list.length;
+  } catch (e) { return 0; }
+}
 async function maybeBrief(S, settings, force = false) {
   try {
     if (!S || !S.rows || !S.rows.length || (settings.notify === false && !force)) return false;
@@ -699,6 +713,42 @@ function briefText(S, settings, slot) {
   if (mv.length) lines.push(mv.join(" · "));
   if (S.stale) lines.push("⚠️ บางราคายังเป็นราคาเก่า");
   return { title, body: lines.join("\n") };
+}
+
+// ---------- แจ้งเตือนราคา (ตั้งเป้าราคารายตัว + พอร์ตขยับแรง) — คำนวณในเครื่อง ไม่ใช้ AI ----------
+// data.alerts = [{ id, type, symbol, op: ">=" | "<=", price, on, firedAt }]  (ยิงครั้งเดียวแล้วปิดเอง)
+// data.settings.moveAlert = % (0 = ปิด) แจ้งเมื่อพอร์ตทั้งก้อนขยับเกินนี้ในวันเดียว (วันละครั้งต่อทิศ)
+const alertUnit = (type) => (type === "us" ? "$" : "฿");
+// ราคาที่ใช้เทียบ: หุ้นนอก = USD, อย่างอื่น = บาท (กองทุน = NAV)
+function alertPrice(row) { return row.type === "us" ? row.native : row.price; }
+function alertLabel(a) { return `${a.symbol} ${a.op === "<=" ? "≤" : "≥"} ${alertUnit(a.type)}${fmtPrice(a.price)}`; }
+function checkAlerts(data, S, nowMs = Date.now()) {
+  const out = [];
+  if (!S || !S.rows || data.sample) return out;
+  const today = bkkParts(nowMs).ymd;
+  for (const a of data.alerts || []) {
+    if (!a.on) continue;
+    const r = S.rows.find((x) => x.type === a.type && x.symbol === a.symbol);
+    const p = r ? alertPrice(r) : NaN;
+    if (!isFinite(p) || !(a.price > 0)) continue;
+    if (a.op === "<=" ? p <= a.price : p >= a.price) {
+      a.on = false; a.firedAt = nowMs;
+      const up = a.op !== "<=";
+      out.push({ id: "pcp-alert-" + a.id, title: `${up ? "🎯" : "🔔"} ${a.symbol} ${up ? "ขึ้นถึง" : "ลงมาถึง"}เป้าแล้ว!`,
+        body: `ราคาตอนนี้ ${alertUnit(a.type)}${fmtPrice(p)} (ตั้งไว้ ${alertLabel(a)}) · วันนี้ ${pctStr(r.dayPct)}\nถือ ${fmt(r.qty, r.type === "crypto" ? 6 : 2).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")} · กำไร ${signed(r.pl)} ฿ (${pctStr(r.plPct)})` });
+    }
+  }
+  const th = num(data.settings && data.settings.moveAlert);
+  if (th > 0 && Math.abs(S.dayPct) >= th) {
+    const dir = S.dayPct > 0 ? "up" : "down";
+    data.alertState ||= {};
+    if (data.alertState[dir] !== today) {
+      data.alertState[dir] = today;
+      out.push({ id: "pcp-move-" + dir, title: dir === "up" ? `🚀 พอร์ตพุ่ง ${pctStr(S.dayPct)} วันนี้!` : `📉 พอร์ตร่วง ${pctStr(S.dayPct)} วันนี้`,
+        body: `${signed(S.day)} ฿ · มูลค่า ฿${fmt(S.total)}` + (dir === "up" ? (S.best ? ` · นำโดย ${S.best.symbol} ${pctStr(S.best.dayPct)}` : "") : (S.worst ? ` · ตัวฉุด ${S.worst.symbol} ${pctStr(S.worst.dayPct)}` : "")) });
+    }
+  }
+  return out;
 }
 
 // @shared-end
@@ -2449,6 +2499,47 @@ async function catFlow(data) {
   writeJSON(F_DATA, data);
 }
 
+async function alertFlow(data, S) {
+  data.alerts ||= [];
+  while (true) {
+    const L = data.alerts;
+    const mv = num(data.settings.moveAlert) || 0;
+    const opts = L.map((x) => `${x.on ? "🟢" : "⚪️"} ${alertLabel(x)}${x.on ? "" : x.firedAt ? " · แจ้งแล้ว" : " · ปิด"}`);
+    opts.push("➕ ตั้งแจ้งเตือนราคาใหม่", `📊 พอร์ตขยับแรงในวันเดียว (${mv > 0 ? "±" + mv + "%" : "ปิด"})`);
+    const i = await ask("⏰ แจ้งเตือนราคา", "แจ้งครั้งเดียวเมื่อราคาแตะเป้า (แล้วปิดเอง แตะรายการเพื่อเปิดใหม่/ลบ)\nหุ้นนอกใช้ราคา USD · อย่างอื่นเป็นบาท · ไม่ใช้ AI", opts, "เสร็จ");
+    if (i < 0) return;
+    if (i === L.length + 1) {
+      const a = new Alert(); a.title = "📊 พอร์ตขยับแรง"; a.message = "แจ้งเมื่อพอร์ตทั้งก้อนขึ้นหรือลงเกินกี่ % ในวันเดียว (0 = ปิด)";
+      const t = a.addTextField("เช่น 2", mv ? String(mv) : ""); t.setDecimalPadKeyboard();
+      a.addAction("บันทึก"); a.addCancelAction("ยกเลิก");
+      if ((await a.presentAlert()) === 0) { const v = num(a.textFieldValue(0)); data.settings.moveAlert = v > 0 ? v : 0; writeJSON(F_DATA, data); }
+    } else if (i === L.length) {
+      if (!S || !S.rows.length) { await info("ยังไม่มีพอร์ต", "เพิ่มรายการก่อน แล้วค่อยตั้งแจ้งเตือน"); continue; }
+      const rows = S.rows.filter((r) => isFinite(alertPrice(r)));
+      const j = await ask("เลือกตัวที่จะตั้งเตือน", null, rows.map((r) => `${r.symbol} · ตอนนี้ ${alertUnit(r.type)}${fmtPrice(alertPrice(r))}`));
+      if (j < 0) continue;
+      const r = rows[j], cur = alertPrice(r);
+      const a = new Alert(); a.title = `${r.symbol} ตอนนี้ ${alertUnit(r.type)}${fmtPrice(cur)}`;
+      a.message = "ใส่ราคาเป้าหมาย\nสูงกว่าตอนนี้ = แจ้งเมื่อขึ้นถึง · ต่ำกว่า = แจ้งเมื่อลงถึง";
+      const t = a.addTextField(`ราคา (${alertUnit(r.type)})`, ""); t.setDecimalPadKeyboard();
+      a.addAction("ตั้งแจ้งเตือน"); a.addCancelAction("ยกเลิก");
+      const k = await a.presentAlert();
+      const v = num(a.textFieldValue(0));
+      if (k < 0 || !(v > 0)) continue;
+      const nw = { id: uid(), type: r.type, symbol: r.symbol, op: v < cur ? "<=" : ">=", price: v, on: true };
+      L.push(nw);
+      writeJSON(F_DATA, data);
+      await info("ตั้งแล้ว ⏰", `แจ้งเมื่อ ${alertLabel(nw)}`);
+    } else {
+      const x = L[i];
+      const k = await ask(alertLabel(x), x.firedAt ? `แจ้งไปแล้วเมื่อ ${thDate(new Date(x.firedAt))} ${hm(new Date(x.firedAt))}` : null, [x.on ? "ปิด" : "เปิดใหม่", "🗑 ลบ"]);
+      if (k === 0) { x.on = !x.on; if (x.on) delete x.firedAt; }
+      if (k === 1) L.splice(i, 1);
+      if (k >= 0) writeJSON(F_DATA, data);
+    }
+  }
+}
+
 async function goalFlow(data) {
   const a = new Alert(); a.title = "🎯 เป้าหมายพอร์ต";
   a.message = "แมวจะแสดงแถบ EXP ใน widget ใหญ่ ใส่ 0 เพื่อปิด";
@@ -2515,11 +2606,11 @@ async function appMenu() {
     const { data, S, hist } = await loadAll();
     const st = data.settings;
     const act = catActivity(S, st);
-    if (!data.sample) await maybeBrief(S, st);
+    if (!data.sample) { await maybeBrief(S, st); await maybeAlerts(data, S); }
     const note = await updateNotice();
     const msg = (note ? note + "\n\n" : "") + (S ? `฿${fmt(S.total)}  ${signed(S.pl)} (${pctStr(S.plPct)})\n` : "") + `🐱 ${st.catName}: "${actLine(S, act)}"\n🇹🇭 SET ${act.M.th.label}\n🇺🇸 US ${act.M.us.label}`;
     const opts = ["🐾 ห้องแมว (แมวขยับได้)", "📊 ดูพอร์ตและกราฟ", "📸 นำเข้าจากรูปด้วย AI (หลายรายการ)", "➕ เพิ่มรายการซื้อ", "✏️ แก้ไข / ลบรายการ", "📝 อัปเดต NAV กองทุน",
-      "🐱 ตั้งค่าแมว / ธีม", "🎯 ตั้งเป้าหมายพอร์ต", `🔔 แจ้งเตือนสรุปพอร์ต (${st.notify === false ? "ปิด" : "เปิด"})`, "👁 พรีวิว Widget", "🔑 Bitkub API (ไม่บังคับ)", "💾 สำรอง / กู้คืนข้อมูล", `🔄 อัปเดต (v${VERSION})`, "📤 แชร์ให้เพื่อน"];
+      "🐱 ตั้งค่าแมว / ธีม", "🎯 ตั้งเป้าหมายพอร์ต", `🔔 แจ้งเตือนสรุปพอร์ต (${st.notify === false ? "ปิด" : "เปิด"})`, `⏰ แจ้งเตือนราคา (${(data.alerts || []).filter((x) => x.on).length})`, "👁 พรีวิว Widget", "🔑 Bitkub API (ไม่บังคับ)", "💾 สำรอง / กู้คืนข้อมูล", `🔄 อัปเดต (v${VERSION})`, "📤 แชร์ให้เพื่อน"];
     if (!data.holdings.length) opts.push("🧪 ใส่ข้อมูลตัวอย่างเพื่อทดลอง");
     if (data.sample) opts.push("🧹 ล้างข้อมูลตัวอย่าง");
     const i = await ask(`PIXEL CAT PORTFOLIO v${VERSION}`, msg, opts, "ปิด");
@@ -2533,6 +2624,7 @@ async function appMenu() {
     else if (pick.startsWith("📝")) await navFlow(data);
     else if (pick.startsWith("🐱")) await catFlow(data);
     else if (pick.startsWith("🎯")) await goalFlow(data);
+    else if (pick.startsWith("⏰")) await alertFlow(data, S);
     else if (pick.startsWith("🔔")) {
       const on = st.notify !== false;
       const j = await ask("🔔 แจ้งเตือนสรุปพอร์ต", "แมวจะส่งสรุปสั้นๆ วันละ 2 รอบ\n• เย็น หลังตลาดหุ้นไทยปิด (16:45)\n• เช้า หลังตลาดอเมริกาปิด (7:00)\n\nคำนวณในเครื่องทั้งหมด ไม่ใช้ AI ไม่เสียค่าใช้จ่าย\n(ต้องมี widget อยู่บนหน้าจอ แจ้งเตือนจะมาตอน widget รีเฟรช อาจช้ากว่าเวลาเล็กน้อย)",
@@ -2567,7 +2659,7 @@ if (config.runsInWidget || config.runsInAccessoryWidget) {
   try {
     const { data, S, hist } = await loadAll();
     w = buildWidget(S, hist, config.widgetFamily, data.settings);
-    if (!data.sample) await maybeBrief(S, data.settings);
+    if (!data.sample) { await maybeBrief(S, data.settings); await maybeAlerts(data, S); }
   } catch (e) {
     T = makeTheme("auto");
     w = new ListWidget(); w.backgroundColor = T.bg; w.setPadding(12, 12, 12, 12);

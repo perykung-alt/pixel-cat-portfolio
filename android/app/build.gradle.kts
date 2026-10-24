@@ -12,8 +12,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // ทุกครั้งที่ปล่อย APK ใหม่: เพิ่ม versionCode และแก้ "android" ใน version.json ให้ตรงกัน
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "1.3.0"
     }
 
     signingConfigs {

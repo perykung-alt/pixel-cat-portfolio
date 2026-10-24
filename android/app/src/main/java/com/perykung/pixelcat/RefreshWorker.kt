@@ -25,6 +25,7 @@ class RefreshWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
                 val sum = Portfolio.refresh(ctx, data)
                 Store.setSummary(ctx, sum)
                 Brief.maybe(ctx, sum, data)
+                Alerts.check(ctx, sum, data)
             } catch (_: Exception) {
             }
         }

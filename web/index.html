@@ -134,6 +134,15 @@ a{color:inherit}
       <div class="row" style="margin-top:6px" id="briefTestRow" hidden><button class="btn sm" id="briefTest">📨 ส่งแจ้งเตือนตัวอย่าง</button></div>
       <div class="row" style="margin-top:12px"><button class="btn pri sm" id="saveSet">บันทึก</button></div>
     </div>
+    <div class="card"><h2>■ ⏰ แจ้งเตือนราคา</h2>
+      <div class="sub">แจ้งครั้งเดียวเมื่อราคาแตะเป้าแล้วปิดเอง · ใส่สูงกว่าราคาตอนนี้ = รอขึ้น ต่ำกว่า = รอลง · หุ้นนอกใช้ราคา USD อย่างอื่นเป็นบาท · คำนวณในเครื่อง ไม่ใช้ AI</div>
+      <div id="alertList" style="margin-top:8px"></div>
+      <label for="alSym">ตั้งเตือนใหม่</label>
+      <select id="alSym"></select>
+      <div class="row" style="margin-top:6px"><input id="alPrice" inputmode="decimal" placeholder="ราคาเป้าหมาย" style="flex:1;min-width:120px"><button class="btn sm pri" id="alAdd">➕ เพิ่ม</button></div>
+      <label for="sMove">📊 แจ้งเมื่อพอร์ตขยับเกิน (% ในวันเดียว, 0 = ปิด)</label><input id="sMove" inputmode="decimal" placeholder="เช่น 2">
+      <div class="sub" id="alNote" style="margin-top:6px"></div>
+    </div>
     <div class="card"><h2>■ 💾 สำรอง / ย้ายข้อมูล</h2>
       <div class="sub">ใช้ย้ายข้อมูลระหว่าง iPhone (Scriptable) ↔ Android / คอม ได้ทั้งสองทาง · บน iPhone: เมนู 💾 สำรอง → คัดลอกข้อมูลไปคลิปบอร์ด</div>
       <div class="row" style="margin-top:10px"><button class="btn sm" id="exportBtn">คัดลอกข้อมูลสำรอง</button><button class="btn sm" id="dlBtn">ดาวน์โหลดไฟล์</button></div>

@@ -522,6 +522,65 @@ function renderChart() {
   }).join("");
 }
 
+// ---------- แจ้งเตือนราคา ----------
+// ในแอป Android ตัวแอปเป็นคนแจ้ง (ทำงานเบื้องหลังได้) · บนเบราว์เซอร์แจ้งได้เฉพาะตอนเปิดหน้าเว็บอยู่
+function webAlerts() {
+  if (IN_APP || !S) return;
+  const list = checkAlerts(data, S);
+  if (!list.length) return;
+  save();
+  for (const x of list) {
+    toast(x.title, 6000);
+    if ("Notification" in window && Notification.permission === "granted") {
+      const opt = { body: x.body, tag: x.id, icon: "icons/icon-192.png" };
+      (navigator.serviceWorker ? navigator.serviceWorker.getRegistration() : Promise.resolve(null))
+        .then((r) => (r ? r.showNotification(x.title, opt) : new Notification(x.title, opt))).catch(() => {});
+    }
+  }
+  if (currentTab === "set") renderAlerts();
+}
+// รับสถานะ "แจ้งไปแล้ว" จากแอป Android กลับมาปิดรายการในเว็บ
+function syncFiredFromApp() {
+  if (!IN_APP || !AndroidBridge.firedAlerts) return;
+  try {
+    const fired = JSON.parse(AndroidBridge.firedAlerts() || "{}");
+    let ch = false;
+    for (const a of data.alerts || []) if (a.on && fired[a.id]) { a.on = false; a.firedAt = fired[a.id]; ch = true; }
+    if (ch) save();
+  } catch (e) {}
+}
+function renderAlerts() {
+  const L = (data.alerts ||= []);
+  $("alertList").innerHTML = L.length ? L.map((a, i) => `<div class="row" style="justify-content:space-between;border-bottom:2px dashed var(--line, #c9b89a);padding:6px 0">
+      <span>${a.on ? "🟢" : "⚪️"} <b>${esc(alertLabel(a))}</b>${a.on ? "" : a.firedAt ? ` <span class="sub">· แจ้งแล้ว ${esc(thDate(new Date(a.firedAt)))}</span>` : ' <span class="sub">· ปิด</span>'}</span>
+      <span class="row"><button class="btn sm" data-tg="${i}">${a.on ? "ปิด" : "เปิด"}</button><button class="btn sm danger" data-del="${i}">ลบ</button></span></div>`).join("")
+    : '<div class="sub">ยังไม่มีแจ้งเตือน</div>';
+  $("alertList").querySelectorAll("[data-tg]").forEach((b) => (b.onclick = () => { const a = L[+b.dataset.tg]; a.on = !a.on; if (a.on) { delete a.firedAt; a.id = uid(); } save(); renderAlerts(); }));
+  $("alertList").querySelectorAll("[data-del]").forEach((b) => (b.onclick = () => { L.splice(+b.dataset.del, 1); save(); renderAlerts(); }));
+  const rows = S ? S.rows.filter((r) => isFinite(alertPrice(r))) : [];
+  $("alSym").innerHTML = rows.length ? rows.map((r, i) => `<option value="${i}">${esc(r.symbol)} · ตอนนี้ ${alertUnit(r.type)}${fmtPrice(alertPrice(r))}</option>`).join("") : "<option>เพิ่มพอร์ตก่อน</option>";
+  $("alSym").dataset.keys = JSON.stringify(rows.map((r) => [r.type, r.symbol]));
+  $("sMove").value = data.settings.moveAlert || "";
+  $("alNote").textContent = IN_APP ? "แอปจะแจ้งเตือนเองแม้ไม่ได้เปิด (เช็กราคาทุก ~15 นาที)"
+    : "บนเบราว์เซอร์จะแจ้งเฉพาะตอนเปิดหน้าเว็บอยู่ · ถ้าอยากได้แจ้งเตือนตลอดเวลา ใช้แอป Android หรือ widget บน iPhone";
+}
+function bindAlerts() {
+  $("alAdd").onclick = () => {
+    const keys = JSON.parse($("alSym").dataset.keys || "[]"), k = keys[+$("alSym").value];
+    const v = num($("alPrice").value);
+    if (!k) return toast("เพิ่มพอร์ตก่อนนะ");
+    if (!(v > 0)) return toast("ใส่ราคาเป้าหมายก่อน");
+    const r = S && S.rows.find((x) => x.type === k[0] && x.symbol === k[1]), cur = r ? alertPrice(r) : NaN;
+    const op = isFinite(cur) && v < cur ? "<=" : ">="; // เป้าสูงกว่าราคาตอนนี้ = รอขึ้น, ต่ำกว่า = รอลง
+    const a = { id: uid(), type: k[0], symbol: k[1], op, price: v, on: true };
+    (data.alerts ||= []).push(a);
+    $("alPrice").value = ""; save(); renderAlerts(); toast(`ตั้งแล้ว ⏰ แจ้งเมื่อ ${alertLabel(a)}`);
+    if (!IN_APP && "Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
+    webAlerts();
+  };
+  $("sMove").onchange = () => { const v = num($("sMove").value); data.settings.moveAlert = v > 0 ? v : 0; save(); toast(v > 0 ? `จะแจ้งเมื่อพอร์ตขยับเกิน ±${v}%` : "ปิดแจ้งเตือนพอร์ตขยับแรงแล้ว"); };
+}
+
 // ---------- แท็บตั้งค่า ----------
 // ---------- เลือกแมว (มีรูปตัวอย่าง: หน้าตรง + ท่าเดิน ตัวที่เลือกเดินได้) ----------
 let pickTimer = null;
@@ -559,6 +618,7 @@ function renderSet() {
   $("sTheme").value = st.theme;
   $("sGoal").value = st.goal || "";
   $("sNotify").checked = st.notify !== false;
+  renderAlerts();
   $("notifyNote").textContent = (IN_APP ? "แอปจะส่งแจ้งเตือนเองแม้ไม่ได้เปิด" : "แจ้งเตือนอัตโนมัติใช้ได้ในแอป Android และ iPhone (widget Scriptable) · ") + " คำนวณในเครื่องทั้งหมด ไม่ใช้ AI ไม่มีค่าใช้จ่าย · ตัวอย่าง:";
   if (S && S.rows.length) { const b = briefText(S, st, "evening"); $("briefPrev").textContent = b.title + "\n" + b.body; } else $("briefPrev").textContent = "เพิ่มพอร์ตก่อน แล้วจะเห็นตัวอย่างสรุปตรงนี้";
   $("briefTestRow").style.display = IN_APP && AndroidBridge.testBrief ? "" : "none";
@@ -683,7 +743,7 @@ function showTab(t) {
   scrollTo(0, 0);
 }
 function refresh() {
-  recompute(); planRoom(); pushWidget();
+  recompute(); planRoom(); pushWidget(); webAlerts();
   // แต่ละส่วนวาดแยกกัน ส่วนไหนพังจะไม่ลากส่วนอื่นพังตาม
   for (const fn of [renderHome, renderPort]) { try { fn(); } catch (e) { toast("⚠︎ " + fn.name + ": " + e.message, 5000); } }
   if (currentTab === "chart") renderChart();
@@ -704,7 +764,7 @@ addEventListener("unhandledrejection", (e) => toast("⚠︎ " + ((e.reason && e.
   applyTheme();
   document.querySelectorAll("nav.tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   $("addBtn").onclick = () => holdingForm(null, "เพิ่มรายการซื้อ");
-  bindSet();
+  bindSet(); bindAlerts(); syncFiredFromApp();
   refresh(); startRoom();
   if (window.Cloud) {
     let prevUid = null;
