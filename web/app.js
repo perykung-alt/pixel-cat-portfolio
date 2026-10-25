@@ -588,7 +588,7 @@ let pickTimer = null;
 function drawCatPreview(cv, breed, t) {
   const front = catGrid("happy", breed), iso = ENGINE.catSprite("walk", t, breed, 0, 0.9, { eyes: "open" });
   const pal = Object.assign({}, SPR.fixed, SPR.palettes[breed] || SPR.palettes.orange);
-  const fw = front[0].length, iw = 31, h = 30, px = 4;
+  const fw = front[0].length, iw = 33, h = 30, px = 4;
   cv.width = (fw + iw + 3) * px; cv.height = h * px;
   const ctx = cv.getContext("2d"); ctx.clearRect(0, 0, cv.width, cv.height);
   front.forEach((row, y) => row.forEach((c, x) => { if (c === "." || !pal[c]) return; ctx.fillStyle = pal[c]; ctx.fillRect(x * px, (h - front.length + y) * px, px, px); }));

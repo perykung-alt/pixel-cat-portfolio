@@ -78,7 +78,7 @@ function catGrid(mood, breed) {
 // @shared-end
 
 // ---------- เวอร์ชัน & อัปเดตอัตโนมัติ ----------
-const VERSION = "6.5.2";
+const VERSION = "6.6.0";
 const REPO = "perykung-alt/pixel-cat-portfolio";
 const UPDATE_BASE = `https://raw.githubusercontent.com/${REPO}/main/`;
 const REPO_URL = `https://github.com/${REPO}`;
@@ -1234,15 +1234,21 @@ function makeCatEngine(SPR) {
     if (!v) { const A = hex2rgb(a), B = hex2rgb(b); v = MIX[key] = rgb2hex(A[0] + (B[0] - A[0]) * k, A[1] + (B[1] - A[1]) * k, A[2] + (B[2] - A[2]) * k); }
     return v;
   }
-  const shade = (c, k) => (k >= 0 ? mix(c, "#FFF6E6", k) : mix(c, "#24122A", -k));
+  // เงา = สีเดิมที่เข้มลงและอมม่วงนิดๆ (ไม่หม่นเป็นเทา) · ไฮไลต์ = อุ่นๆ ครีม
+  const DARK = {};
+  const darkOf = (c) => DARK[c] || (DARK[c] = (() => { const [r, g, b] = hex2rgb(c); return rgb2hex(r * 0.5 + 14, g * 0.42 + 6, b * 0.5 + 22); })());
+  const shade = (c, k) => (k >= 0 ? mix(c, "#FFF6E6", k) : mix(c, darkOf(c), Math.min(1, -k * 1.25)));
   function hash(a, b, c) { let h = (a * 374761393 + b * 668265263 + c * 1274126177) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
   const LIGHT = (() => { const v = [-0.6, 0.15, 1], n = Math.hypot(v[0], v[1], v[2]); return v.map((a) => a / n); })();
+  const IRIS = { orange: "#3FAE5E", gray: "#E8A93A", black: "#F2C230", white: "#4A8BEA", calico: "#D98A2B", scottish: "#C9893A", british: "#E39B2E", siamese: "#3D7FE0" };
+  const S_BLUSH = new Set(["sit", "work"]);
   const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // 0=ขวาล่าง 1=ซ้ายล่าง 2=ซ้ายบน(หันหลัง) 3=ขวาบน
 
   // ---------- แมวแบบ voxel: ใช้ท่าเดิม (มุมข้าง) มาปั้นเป็น 3 มิติ แล้วฉายแบบ isometric ----------
   function catSprite(poseName, t, breed, dir, sc, o = {}) {
     const Pz = (POSES[poseName] || POSES.sit)(t, o);
     const bo = breedOpts(breed), pal = catPalette(breed);
+    const B0 = Pz.body;
     const pts = !!bo.points, calico = breed === "calico", tabby = bo.tabby !== false && !pts && !calico;
     const [fx, fy] = DIRS[((dir % 4) + 4) % 4], gx = -fy, gy = fx;
     const zb = new Map();
@@ -1255,11 +1261,12 @@ function makeCatEngine(SPR) {
       if (cur && cur.d >= d) return;
       const nl = Math.hypot(n[0], n[1], n[2]) || 1;
       const L = ((fx * n[0] + gx * n[2]) * LIGHT[0] + (fy * n[0] + gy * n[2]) * LIGHT[1] - n[1] * LIGHT[2]) / nl;
-      zb.set(k, { d, px, py, c: L > 0.6 ? shade(base, 0.22) : L < -0.3 ? shade(base, -0.34) : L < 0.12 ? shade(base, -0.15) : base });
+      // แรเงา 5 ระดับแบบสไปรต์เกม MMO ยุคเก่า (ไฮไลต์นุ่ม เงาอมม่วง)
+      zb.set(k, { d, px, py, c: L > 0.72 ? shade(base, 0.32) : L > 0.42 ? shade(base, 0.14) : L > 0.04 ? base : L > -0.32 ? shade(base, -0.15) : shade(base, -0.32) });
     }
     function coat(x2, y2, z2) {
       if (calico) { const n = hash(Math.floor(x2 / 3.4), Math.floor(y2 / 3.4), Math.floor((z2 + 9) / 3.4)); return n < 0.24 ? pal.D : n < 0.4 ? "#3A2E2A" : pal.O; }
-      if (tabby && Math.floor(x2 * 0.7 + y2 * 0.25 + 40) % 3 === 0) return pal.D;
+      if (tabby && y2 < B0.y + 0.6 && Math.floor(x2 * 0.55 + y2 * 0.2 + 40) % 3 === 0) return pal.D; // ลายเฉพาะแผ่นหลัง ห่างๆ ดูสะอาดแบบสไปรต์
       return pal.O;
     }
     // ทรงรี (ตัว/สะโพก/หัว)
@@ -1320,22 +1327,28 @@ function makeCatEngine(SPR) {
     ell(B, Math.min(B.ry * 0.98, 4.3), bodyCol);
     for (const e of Pz.extra || []) ell(e, e.ry * 1.05, bodyCol);
     // หัว
-    const hd = Object.assign({}, Pz.head, { x: Pz.head.x + 0.3 }), r = Pz.head.r * 1.12; // หัวโตขึ้นนิด (น่ารักแบบ chibi)
-    ell({ x: hd.x, y: hd.y, rx: r, ry: r * 0.95, rot: 0 }, r * 1.05, (x2, y2, z2) => {
-      if (pts) return Math.hypot(x2 - (hd.x + r * 0.6), y2 - (hd.y + r * 0.2)) < r * 0.85 ? pal.D : pal.O;
-      if (x2 > hd.x + r * 0.35 && y2 > hd.y + r * 0.05 && Math.abs(z2) < r * 0.8) return pal.L;
-      if (tabby && y2 < hd.y - r * 0.4 && x2 > hd.x - r * 0.3 && Math.floor(z2 * 1.1 + 20) % 2 === 0) return pal.D;
+    // หัวโตแบบ chibi (หัวเกือบเท่าตัว) ยกขึ้นนิดไม่ให้จมตัว
+    const lift = poseName === "sleep" || poseName === "loaf" ? 0.4 : 1.3;
+    // หันหน้ามาทางกล้องนิดหนึ่ง (เหมือนตัวละครเกมที่มองผู้เล่น) เมื่อแมวหันมาทางเรา
+    const camF = fx + fy, camS = gx + gy, yaw = camF > 0 ? Math.sign(camS) * 0.5 : 0, cyw = Math.cos(yaw), syw = Math.sin(yaw);
+    const faceP = (a, y, b) => [hd.x + a * cyw - b * syw, y, a * syw + b * cyw]; // จุดบนหน้า (a=หน้า, b=ข้าง) หมุนตาม yaw
+    const hd = Object.assign({}, Pz.head, { x: Pz.head.x + 0.6, y: Pz.head.y - lift }), r = Pz.head.r * 1.38;
+    ell({ x: hd.x, y: hd.y, rx: r, ry: r * 0.92, rot: 0 }, r * 1.12, (x2, y2, z2) => {
+      if (pts) { const fa = (x2 - hd.x) * cyw + z2 * syw; return fa > -r * 0.05 && Math.hypot(fa - r * 0.6, y2 - (hd.y + r * 0.2)) < r * 0.85 ? pal.D : pal.O; }
+      const fa = (x2 - hd.x) * cyw + z2 * syw, fb = -(x2 - hd.x) * syw + z2 * cyw; // พิกัดในกรอบหน้า
+      if (fa > r * 0.45 && y2 > hd.y + r * 0.18 && Math.abs(fb) < r * 0.62) return pal.L;
+      if (tabby && y2 < hd.y - r * 0.5 && fa > -r * 0.1 && Math.abs(fb) < r * 0.45 && Math.floor(fb * 1.3 + 20) % 2 === 0) return pal.D;
       return calico ? coat(x2, y2, z2) : pal.O;
     });
     // หู
     const ear = bo.ears || Pz.ears || "up";
-    const eH = ear === "fold" ? 1.6 : ear === "small" ? 3.4 : ear === "low" ? 2.8 : ear === "back" ? 3.8 : 5;
+    const eH = (r / 4.8) * (ear === "fold" ? 1.6 : ear === "small" ? 3.2 : ear === "low" ? 2.6 : ear === "back" ? 3.6 : 4.6);
     for (const sd of [-1, 1]) {
-      const base = [hd.x - r * 0.05, hd.y - r * 0.6, sd * r * 0.5];
-      let apex = [base[0] + (ear === "back" ? -1.7 : 0.2), base[1] - eH, base[2] + sd * 0.6];
-      if (ear === "fold") apex = [base[0] + 1.5, base[1] - 0.9, base[2] + sd * 0.3];
-      if (ear === "low") apex = [base[0], base[1] - eH * 0.7, base[2] + sd * 1.4];
-      cone(base, apex, r * (ear === "fold" ? 0.55 : 0.5), (qx, rel) => (pts || ear === "fold" ? pal.D : qx > 0.15 && rel < 0.62 ? pal.P : calico ? pal.D : pal.O));
+      // หูสองข้างกางตามทิศหน้า (หมุนตาม yaw) จะได้เห็นครบทั้งคู่
+      const base = faceP(-r * 0.05, hd.y - r * 0.62, sd * r * 0.55);
+      const tip = ear === "fold" ? [1.5, -0.9, sd * 0.3] : ear === "low" ? [0, -eH * 0.7, sd * 1.4] : [ear === "back" ? -1.7 : 0.25, -eH, sd * 0.7];
+      const apex = [base[0] + tip[0] * cyw - tip[2] * syw, base[1] + tip[1], base[2] + tip[0] * syw + tip[2] * cyw];
+      cone(base, apex, r * (ear === "fold" ? 0.5 : 0.44), (qx, rel) => (pts || ear === "fold" ? pal.D : qx > 0.15 && rel < 0.62 ? pal.P : calico ? pal.D : pal.O));
     }
     // หน้า (ตา จมูก แก้ม) — วาดเฉพาะด้านที่หันมาทางเรา
     const C = [hd.x, hd.y, 0];
@@ -1349,14 +1362,45 @@ function makeCatEngine(SPR) {
       if (h2) { const c2 = zb.get((py + 1) * 4096 + px); if (c2) { c2.c = color; c2.feat = 1; } }
     };
     const eyes = Pz.eyes || o.eyes || "open";
-    const big = sc >= 0.62;
-    for (const sd of [-1, 1]) {
-      const e = [hd.x + r * 0.84, hd.y - r * 0.05, sd * r * 0.4];
-      if (eyes === "closed" || eyes === "happy" || eyes === "half") feat([e[0], e[1] + 0.6, e[2]], pal.K, false);
-      else feat(e, bo.iris ? pal.G || pal.E : pal.E, big || eyes === "wide");
-      if (o.blush) feat([hd.x + r * 0.6, hd.y + r * 0.45, sd * r * 0.65], pal.P, false);
+    // ตาโตเป็นประกายแบบสไปรต์ chibi: ขอบตาบน + ม่านตา 2 โทน + จุดประกาย
+    const iris = IRIS[breed] || pal.E, iris2 = shade(iris, -0.45);
+    const scr = (p) => { const [wx, wy, wz] = toW(p[0], p[1], p[2]); return { px: Math.round(wx - wy), py: Math.round((wx + wy) / 2 - wz), d: wx + wy + wz, w: [wx, wy, wz] }; };
+    const [ccx, ccy, ccz] = toW(C[0], C[1], C[2]);
+    const setPx = (x, y, c) => { const q = zb.get(y * 4096 + x); if (q) { q.c = c; q.feat = 1; } };
+    const eyeAt = [-1, 1].map((sd) => {
+      const e = scr(faceP(r * 0.82, hd.y + r * 0.02, sd * r * 0.4));
+      const facing = (e.w[0] - ccx) + (e.w[1] - ccy) + (e.w[2] - ccz);
+      const cur = zb.get(e.py * 4096 + e.px);
+      return Object.assign(e, { ok: facing > 0.05 * r * sc && cur && cur.d - e.d < 2.2 * Math.max(1, sc * 2), facing });
+    }).filter((e) => e.ok);
+    const big = sc * r >= 3.2;
+    const near = eyeAt.length ? Math.max(...eyeAt.map((e) => e.facing)) : 0;
+    for (const e of eyeAt) {
+      const wide = big && e.facing >= near * 0.7 ? 2 : 1; // ตาข้างไกลแคบลง (มุม 3/4)
+      const X = e.px - (wide - 1), Y = e.py - 1;
+      if (eyes === "happy") { setPx(X, Y + 1, pal.K); if (wide > 1) { setPx(X + 1, Y, pal.K); setPx(X + 2, Y + 1, pal.K); } else setPx(X, Y, pal.K); }
+      else if (eyes === "closed") { for (let i = 0; i < wide + (big ? 1 : 0); i++) setPx(X + i, Y + 1, pal.K); }
+      else if (eyes === "half") { for (let i = 0; i < wide; i++) { setPx(X + i, Y, pal.K); setPx(X + i, Y + 1, iris2); } }
+      else {
+        const tall = big || eyes === "wide";
+        for (let i = 0; i < wide; i++) {
+          if (tall) setPx(X + i, Y - (eyes === "wide" ? 1 : 0), pal.K);
+          setPx(X + i, Y + 1, i === wide - 1 && wide > 1 ? "#FFFFFF" : iris);
+          if (tall) setPx(X + i, Y + 2, iris2);
+        }
+        if (wide === 1 && big) setPx(X, Y + 1, iris);
+      }
     }
-    feat([hd.x + r * 1.0, hd.y + r * 0.2, 0], pal.N, false);
+    // จมูก + ปาก + แก้มชมพู
+    const ns = scr(faceP(r * 1.02, hd.y + r * 0.3, 0));
+    if ((ns.w[0] - ccx) + (ns.w[1] - ccy) + (ns.w[2] - ccz) > 0.1 * r * sc) {
+      setPx(ns.px, ns.py, pal.N);
+      if (big && eyes !== "closed") setPx(ns.px, ns.py + 1, shade(pal.K, 0.25));
+    }
+    if (o.blush || S_BLUSH.has(poseName)) for (const sd of [-1, 1]) {
+      const bl = scr(faceP(r * 0.72, hd.y + r * 0.45, sd * r * 0.6));
+      if ((bl.w[0] - ccx) + (bl.w[1] - ccy) + (bl.w[2] - ccz) > 0.15 * r * sc) { setPx(bl.px, bl.py, mix(pal.P, "#FFFFFF", 0.15)); if (big) setPx(bl.px + 1, bl.py, mix(pal.P, "#FFFFFF", 0.15)); }
+    }
     // เส้นขอบ: รอบตัว = K, ขอบซ้อนด้านใน = เข้มลง
     const out = [];
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
@@ -1364,14 +1408,15 @@ function makeCatEngine(SPR) {
       let c = p.c;
       if (!p.feat) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const q = zb.get((p.py + dy) * 4096 + p.px + dx);
-        if (q && q.d - p.d > 3.2 * Math.max(0.6, sc)) { c = mix(c, pal.K, 0.6); break; }
+        if (q && q.d - p.d > 3.2 * Math.max(0.6, sc)) { c = mix(c, pal.K, 0.5); break; }
       }
       out.push([p.px, p.py, c]);
       x0 = Math.min(x0, p.px); x1 = Math.max(x1, p.px); y0 = Math.min(y0, p.py); y1 = Math.max(y1, p.py);
     }
     for (const p of [...zb.values()]) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const k = (p.py + dy) * 4096 + p.px + dx;
-      if (!zb.has(k)) { zb.set(k, { d: -1e9, px: p.px + dx, py: p.py + dy, c: pal.K, ol: 1 }); out.push([p.px + dx, p.py + dy, pal.K]); }
+      // เส้นขอบรอบตัวแบบสี (ไม่ดำสนิท): สีเข้มของขนข้างๆ — ด้านบนรับแสงจางกว่า
+      if (!zb.has(k)) { const oc = mix(shade(p.c, -0.6), pal.K, dy < 0 ? 0.45 : 0.75); zb.set(k, { d: -1e9, px: p.px + dx, py: p.py + dy, c: oc, ol: 1 }); out.push([p.px + dx, p.py + dy, oc]); }
     }
     const [hx, hy, hz] = toW(hd.x, hd.y - r, 0);
     return { pix: out, x0: x0 - 1, y0: y0 - 1, x1: x1 + 1, y1: y1 + 1, head: [Math.round(hx - hy), Math.round((hx + hy) / 2 - hz)] };
@@ -1393,7 +1438,7 @@ function makeCatEngine(SPR) {
     const A = Math.round(SS * 0.55), Bd = SS - A, k = SS / 110;
     const mnX = -Bd - 2, mxX = A + 2;
     const ox = Math.round((w - (mxX - mnX)) / 2) - mnX, oy = Math.round((h - (SS / 2 + Hw + T)) / 2) + Hw + 1;
-    const sc = clamp(SS / 165, 0.36, 0.72);
+    const sc = clamp(SS / 140, 0.4, 0.88); // แมวตัวใหญ่ขึ้น (หัวโตแบบ chibi)
     const X = (x, y) => ox + x - y, Y = (x, y, z) => oy + (x + y) / 2 - z;
     // ทางเดินแมว (สี่เหลี่ยมบนพรม)
     const path = { x0: Math.round(A * 0.36), x1: Math.round(A * 0.86), y0: Math.round(Bd * 0.36), y1: Math.round(Bd * 0.84) };
@@ -1590,7 +1635,7 @@ function makeCatEngine(SPR) {
     const extras = [], pre = [];
     if (A2 === "watchTH" || A2 === "watchUS" || A2 === "ready") {
       pose = "work"; dir = 2; o = { eyes: S.mood === "sad" ? "half" : "open", type: A2 !== "ready" };
-      cx = desk.x + desk.dx + Math.round(8 * sc + 2); cy = desk.y + desk.dy * 0.5;
+      cx = desk.x + desk.dx + Math.round(9 * sc + 3); cy = desk.y + desk.dy * 0.68;
     } else if (A2 === "eat") {
       pose = "eat"; o = {}; dir = 0; cx = bowl.x - Math.round(11 * sc); cy = bowl.y + 1.5;
     } else if (A2 === "sleep") {
@@ -1630,11 +1675,36 @@ function makeCatEngine(SPR) {
     for (const f of extras) f();
     const hx = sx0 + spr.head[0], hy = sy0 + spr.head[1];
     if (A2 === "sleep") { const zt = Math.floor(t * 3); for (let i = 0; i <= zt; i++) pr("z", hx + 3 + i * 3, hy - 4 - i * 4); }
-    if (S.mood === "happy" && A2 !== "sleep") pr("heart", hx + 4, hy - 7 + Math.round(Math.sin(t * TAU * 2)));
-    if (S.mood === "sad" && (A2 === "watchTH" || A2 === "watchUS")) pr("sweat", hx - 5, hy - 2);
-    if (A2 === "sulk") pr("cloud", hx - 4, hy - 10);
-    if (S.mood === "wow" && A2 !== "zoomies" && A2 !== "sleep") for (let i = 0; i < 3; i++) pr("coin", hx - 9 + i * 6, hy - 10 + ((Math.floor(t * 6) + i) % 3));
-    // น้ำกระเพื่อมเล็กน้อย
+    // อีโมตในฟองคำพูดเหนือหัว (สไตล์เกม MMO) — แอปจะโผล่เป็นจังหวะ, widget โชว์ค้าง
+    let emo = null;
+    if (A2 === "sulk") emo = "dots";
+    else if (A2 === "watchFly" || (A2 === "butterfly" && pose === "pounce") || A2 === "ready") emo = "bang";
+    else if (S.mood === "sad" && (A2 === "watchTH" || A2 === "watchUS")) emo = "sweat";
+    else if (S.mood === "wow" && A2 !== "sleep" && A2 !== "zoomies") emo = "money";
+    else if (S.mood === "happy" && A2 !== "sleep") emo = Math.floor((S.clock || 0) / 4) % 2 ? "note" : "heart";
+    else if (A2 === "yarn" || A2 === "eat") emo = "note";
+    const showEmo = S.clock == null || ((S.clock % 6) < 3.6);
+    if (emo && showEmo) {
+      const ex = Math.round(hx + 2), ey = Math.round(hy - 12 + (Math.floor((S.clock || 0) * 2) % 2));
+      const W2 = 11, H2 = 9, ink = "#3B2418";
+      for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+        const corner = (x === 0 || x === W2 - 1) && (y === 0 || y === H2 - 1);
+        if (corner) continue;
+        const edge = x === 0 || y === 0 || x === W2 - 1 || y === H2 - 1 || ((x === 1 || x === W2 - 2) && (y === 1 || y === H2 - 2) && false);
+        put(ex + x, ey + y, edge ? ink : "#FFFFFF");
+      }
+      put(ex + 2, ey + H2, ink); put(ex + 3, ey + H2, "#FFFFFF"); put(ex + 4, ey + H2, ink); put(ex + 2, ey + H2 + 1, ink); put(ex + 3, ey + H2 + 1, ink); put(ex + 3, ey + H2 - 1, "#FFFFFF");
+      const ICON = {
+        heart: [".R.R.", "RRRRR", "RRRRR", ".RRR.", "..R.."],
+        note: ["..KK.", "..K.K", "..K..", "KKK..", "KKK.."],
+        bang: ["..R..", "..R..", "..R..", ".....", "..R.."],
+        dots: [".....", ".....", ".....", ".....", "K.K.K"],
+        sweat: ["...B.", "..BB.", ".BBBB", ".BBBB", "..BB."],
+        money: [".YYY.", "YOYOY", "YYOYY", "YOYOY", ".YYY."],
+      }[emo];
+      const IC = { R: "#E8434F", K: "#3B2418", B: "#4FB0F0", Y: "#F2C230", O: "#B5781A" };
+      ICON.forEach((row, y) => { for (let x = 0; x < 5; x++) if (row[x] !== ".") put(ex + 3 + x, ey + 2 + y, IC[row[x]]); });
+    }
     // วาดออกจอ (รวมช่วงสีเดียวกันเป็นสี่เหลี่ยมเดียว)
     for (let y = 0; y < h; y++) {
       let x = 0;
