@@ -242,7 +242,7 @@ function planRoom() {
   if (JSON.stringify(seq) !== JSON.stringify(room.seq)) { room.seq = seq; room.idx = 0; room.t0 = performance.now(); }
 }
 function startRoom() {
-  const cv = $("room"), cw = 192, ch = 104, px = 3, ctx = cv.getContext("2d");
+  const cv = $("room"), cw = 150, ch = 104, px = 3, ctx = cv.getContext("2d");
   cv.width = cw * px; cv.height = ch * px; ctx.imageSmoothingEnabled = false;
   const P = (x, y, w, h, c, a) => { if (w <= 0 || h <= 0) return; ctx.globalAlpha = a == null ? 1 : a; ctx.fillStyle = c; ctx.fillRect(Math.round(x * px), Math.round(y * px), w * px, h * px); ctx.globalAlpha = 1; };
   const PER = { walk: 16, yarn: 12, butterfly: 10, zoomies: 5 };
@@ -263,7 +263,7 @@ function startRoom() {
     const act = room.act || { mood: "normal", sleepy: false, seed: 1, M: markets() };
     ctx.clearRect(0, 0, cv.width, cv.height);
     ENGINE.renderScene(P, {
-      w: cw, h: ch, activity: a, mood: room.tap ? "happy" : act.mood, sleepy: act.sleepy, t, ft, seed: act.seed % 97,
+      clock: now / 1000, w: cw, h: ch, activity: a, mood: room.tap ? "happy" : act.mood, sleepy: act.sleepy, t, ft, seed: act.seed % 97,
       hour: markets().bkk.min / 60, catColor: data.settings.catColor,
       chartUp: a === "watchUS" ? (S ? S.cats.us.day + S.cats.fund.day >= 0 : true) : (S ? S.cats.thai.day >= 0 : true),
       catX: Math.round((cw - 34) * 0.35),
@@ -488,6 +488,7 @@ function moveForm(r) {
 // ---------- แท็บกราฟ ----------
 function renderChart() {
   const cv = $("hist"), dpr = Math.min(3, devicePixelRatio || 1);
+  cv.style.display = hist.length < 2 ? "none" : ""; // ยังไม่มีข้อมูล: ไม่ต้องโชว์กรอบว่าง
   const W = cv.clientWidth || 320, H = 150;
   cv.width = W * dpr; cv.height = H * dpr;
   const ctx = cv.getContext("2d"); ctx.scale(dpr, dpr); ctx.clearRect(0, 0, W, H);
@@ -552,7 +553,7 @@ function syncFiredFromApp() {
 function renderAlerts() {
   const L = (data.alerts ||= []);
   $("alertList").innerHTML = L.length ? L.map((a, i) => `<div class="row" style="justify-content:space-between;border-bottom:2px dashed var(--line, #c9b89a);padding:6px 0">
-      <span>${a.on ? "🟢" : "⚪️"} <b>${esc(alertLabel(a))}</b>${a.on ? "" : a.firedAt ? ` <span class="sub">· แจ้งแล้ว ${esc(thDate(new Date(a.firedAt)))}</span>` : ' <span class="sub">· ปิด</span>'}</span>
+      <span>${a.on ? "🟢" : "⚪️"} <b>${esc(alertLabel(a))}</b>${S && !S.rows.some((r) => r.type === a.type && r.symbol === a.symbol) ? ' <span class="sub">· ไม่ได้ถือแล้ว</span>' : a.on ? "" : a.firedAt ? ` <span class="sub">· แจ้งแล้ว ${esc(thDate(new Date(a.firedAt)))}</span>` : ' <span class="sub">· ปิด</span>'}</span>
       <span class="row"><button class="btn sm" data-tg="${i}">${a.on ? "ปิด" : "เปิด"}</button><button class="btn sm danger" data-del="${i}">ลบ</button></span></div>`).join("")
     : '<div class="sub">ยังไม่มีแจ้งเตือน</div>';
   $("alertList").querySelectorAll("[data-tg]").forEach((b) => (b.onclick = () => { const a = L[+b.dataset.tg]; a.on = !a.on; if (a.on) { delete a.firedAt; a.id = uid(); } save(); renderAlerts(); }));

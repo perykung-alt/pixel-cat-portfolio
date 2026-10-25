@@ -78,7 +78,7 @@ function catGrid(mood, breed) {
 // @shared-end
 
 // ---------- เวอร์ชัน & อัปเดตอัตโนมัติ ----------
-const VERSION = "6.5.1";
+const VERSION = "6.5.2";
 const REPO = "perykung-alt/pixel-cat-portfolio";
 const UPDATE_BASE = `https://raw.githubusercontent.com/${REPO}/main/`;
 const REPO_URL = `https://github.com/${REPO}`;
@@ -543,7 +543,9 @@ async function saveHistory(S) {
 // SET (เวลาไทย): Pre-open 09:30 · เช้า 10:00–12:30 · พัก 12:30–13:30 · Pre-open 13:30 · บ่าย 14:00–16:30 · Pre-close 16:30–16:40
 // NYSE/Nasdaq (เวลานิวยอร์ก): Pre-market 04:00 · ตลาด 09:30–16:00 · After-hours 16:00–20:00 (แปลงเป็นเวลาไทยอัตโนมัติ รวม Daylight Saving)
 // @shared-begin
-const SET_HOLIDAYS = new Set(["2026-01-01","2026-01-02","2026-03-03","2026-04-06","2026-04-13","2026-04-14","2026-04-15","2026-05-01","2026-05-04","2026-06-01","2026-06-03","2026-07-28","2026-07-29","2026-08-12","2026-10-13","2026-10-16","2026-10-23","2026-12-07","2026-12-10","2026-12-31"]);
+const SET_HOLIDAYS = new Set(["2026-01-01","2026-01-02","2026-03-03","2026-04-06","2026-04-13","2026-04-14","2026-04-15","2026-05-01","2026-05-04","2026-06-01","2026-06-03","2026-07-28","2026-07-29","2026-08-12","2026-10-13","2026-10-16","2026-10-23","2026-12-07","2026-12-10","2026-12-31",
+  // 2570/2027 ตามประกาศ ก.ล.ต. วันหยุดทำการธุรกิจหลักทรัพย์
+  "2027-01-01","2027-02-22","2027-04-06","2027-04-13","2027-04-14","2027-04-15","2027-05-03","2027-05-04","2027-05-20","2027-06-03","2027-07-19","2027-07-28","2027-08-12","2027-10-13","2027-10-25","2027-12-06","2027-12-10","2027-12-31"]);
 const US_HOLIDAYS = new Set(["2026-01-01","2026-01-19","2026-02-16","2026-04-03","2026-05-25","2026-06-19","2026-07-03","2026-09-07","2026-11-26","2026-12-25",
   "2027-01-01","2027-01-18","2027-02-15","2027-03-26","2027-05-31","2027-06-18","2027-07-05","2027-09-06","2027-11-25","2027-12-24"]);
 const US_EARLY_CLOSE = { "2026-11-27": 780, "2026-12-24": 780, "2027-11-26": 780 }; // ปิด 13:00 น. เวลานิวยอร์ก
@@ -695,6 +697,12 @@ function briefSlot(nowMs = Date.now(), sent = {}) {
   const usDay = us.dow >= 1 && us.dow <= 5 && !US_HOLIDAYS.has(us.ymd);
   if (usDay && p.min >= 7 * 60 && p.min < 12 * 60 && sent.morning !== p.ymd) return "morning";
   return null;
+}
+// เวลาถัดไปที่ควรรีเฟรช widget เพื่อส่งสรุปให้ตรงเวลา (07:01 / 16:46 น. ไทย)
+function nextBriefMs(nowMs = Date.now()) {
+  const p = bkkParts(nowMs), day0 = nowMs - p.min * 60e3 - (nowMs % 60e3);
+  const c = [day0 + 421 * 60e3, day0 + 1006 * 60e3, day0 + (1440 + 421) * 60e3];
+  return c.find((t) => t > nowMs + 60e3) || c[2];
 }
 function briefText(S, settings, slot) {
   const nm = (settings && settings.catName) || "แมว";
@@ -1392,7 +1400,7 @@ function makeCatEngine(SPR) {
     const desk = { x: 1, y: Math.round(Bd * 0.12), dx: Math.max(6, Math.round(9 * k)), dy: Math.max(10, Math.round(17 * k)), h: Math.max(5, Math.round(9 * k)) };
     const bed = { x: 1, dx: Math.max(10, Math.round(15 * k)), dy: Math.max(12, Math.round(19 * k)), h: Math.max(3, Math.round(4 * k)) };
     bed.y = Bd - bed.dy - 1;
-    const bowl = { x: Math.round(A * 0.62), y: Bd - Math.max(3, Math.round(4 * k)) };
+    const bowl = { x: A - Math.max(6, Math.round(8 * k)), y: Math.max(7, Math.round(Bd * 0.2)) }; // ฝั่งขวาของจอ ใต้ต้นไม้ นอกทางเดินแมว
 
     // ---------- เลเยอร์นิ่ง (cache) ----------
     const key = [w, h, Math.floor(hour), S.chartUp !== false, S.activity === "watchUS"].join("|");
@@ -1547,7 +1555,20 @@ function makeCatEngine(SPR) {
     };
     const Pd = (x, y, ww, hh, c, a) => { for (let yy = 0; yy < hh; yy++) for (let xx = 0; xx < ww; xx++) put(x + xx, y + yy, c, a); };
     const pr = (name, x, y, flip) => prop(Pd, name, x, y, flip);
+    // เมฆลอยช้าๆ (กลางวัน/เย็น) — S.clock = วินาที (แอปส่งมาให้เมฆขยับ, widget นิ่ง)
+    const clouds = night ? [] : [0, 1, 2].map((i) => {
+      const span = w + 40, cw = 14 + ((S.seed + i * 7) % 3) * 5;
+      return { x: ((((S.clock || 0) * (0.5 + i * 0.25) + i * span / 3 + (S.seed || 0) * 13) % span) + span) % span - 20, y: 4 + ((i * 11 + (S.seed || 0)) % Math.max(4, Math.floor(h * 0.3))), w: cw };
+    });
+    const cloudC = sky.dawn ? "#FFE3D0" : "#FFFFFF";
     function skyAt(x, y) {
+      for (const c of clouds) {
+        const dx = x - c.x, dy = y - c.y;
+        if (dy >= -3 && dy <= 2 && dx >= 0 && dx <= c.w) {
+          const top = dx > c.w * 0.25 && dx < c.w * 0.7 ? -3 : dx > c.w * 0.1 && dx < c.w * 0.9 ? -2 : -1;
+          if (dy >= top) return dy === 2 ? mix(cloudC, sky.bot, 0.35) : cloudC;
+        }
+      }
       const kk = y / h;
       let c = mix(sky.top, sky.bot, Math.floor(kk * 6) / 6);
       if (night && hash(x, y, 1) > 0.993) c = hash(x, y, 2) > 0.5 ? "#FFFFFF" : "#B9CCFF";
@@ -1571,7 +1592,7 @@ function makeCatEngine(SPR) {
       pose = "work"; dir = 2; o = { eyes: S.mood === "sad" ? "half" : "open", type: A2 !== "ready" };
       cx = desk.x + desk.dx + Math.round(8 * sc + 2); cy = desk.y + desk.dy * 0.5;
     } else if (A2 === "eat") {
-      pose = "eat"; o = {}; dir = 1; cx = bowl.x + 1.5; cy = bowl.y - Math.round(12 * sc);
+      pose = "eat"; o = {}; dir = 0; cx = bowl.x - Math.round(11 * sc); cy = bowl.y + 1.5;
     } else if (A2 === "sleep") {
       pose = "sleep"; dir = 1; cx = bed.x + bed.dx * 0.5; cy = bed.y + bed.dy * 0.35; cz = bed.h + 2;
     } else if (A2 === "butterfly" || A2 === "zoomies" || A2 === "walk" || A2 === "yarn") {
@@ -1767,7 +1788,9 @@ function buildWidget(S, hist, family, settings) {
   const cc = settings.catColor;
   try { w.url = URLScheme.forRunningScript() + "?open=room"; } catch (e) {}
   // รีเฟรชถี่ขึ้นช่วงตลาดเปิด (iOS เป็นผู้ตัดสินเวลาจริง)
-  w.refreshAfterDate = new Date(Date.now() + (act.M.th.open || act.M.us.open ? 10 : REFRESH_MIN) * 60 * 1000);
+  let ra = Date.now() + (act.M.th.open || act.M.us.open ? 10 : REFRESH_MIN) * 60 * 1000;
+  if (settings.notify !== false) ra = Math.min(ra, nextBriefMs()); // ให้ทันส่งสรุปเช้า/เย็น
+  w.refreshAfterDate = new Date(ra);
 
   if (family === "accessoryCircular") {
     try { w.addAccessoryWidgetBackground = true; } catch (e) {}
@@ -1945,7 +1968,7 @@ function startScene(cv,cw,ch,A,onLine){
     if(tap&&now<tap.until){a=tap.a;el=(now-tap.t0)/1000}else{tap=null;let cur=A.seq[idx];el=(now-t0)/1000;if(el>cur[1]){idx=(idx+1)%A.seq.length;t0=now;el=0}a=A.seq[idx][0]}
     const per=PER[a]||4,t=(el%per)/per,ft=((now/1000)%(FT[a]||2))/(FT[a]||2);
     ctx.clearRect(0,0,cv.width,cv.height);
-    ENGINE.renderScene(P,{w:cw,h:ch,activity:a,mood:tap?'happy':A.mood,sleepy:A.sleepy,t,ft,seed:A.seed,hour:A.hour,catColor:A.cat,chartUp:a==='watchUS'?A.usUp:A.thUp,catX:Math.round((cw-34)*.35)});
+    ENGINE.renderScene(P,{clock:now/1000,w:cw,h:ch,activity:a,mood:tap?'happy':A.mood,sleepy:A.sleepy,t,ft,seed:A.seed,hour:A.hour,catColor:A.cat,chartUp:a==='watchUS'?A.usUp:A.thUp,catX:Math.round((cw-34)*.35)});
     const ln=tap?'เมี้ยว! เล่นด้วยกัน~':(A.lines[a]||'');if(ln!==lastLine&&onLine){lastLine=ln;onLine(ln)}
   }
   frame();setInterval(frame,90);
@@ -1979,7 +2002,7 @@ $('nm').textContent=D.name;
 $('tot').textContent='฿'+Math.round(D.total).toLocaleString('en-US');
 $('pl').textContent=(D.pl>=0?'+':'')+Math.round(D.pl).toLocaleString('en-US')+' ('+(D.plPct>=0?'+':'')+D.plPct.toFixed(2)+'%) · วันนี้ '+(D.day>=0?'+':'')+D.day.toFixed(2)+'%';
 $('mk').innerHTML=D.anim.mk.map(m=>'<div><span class="dot" style="background:'+m.c+'"></span><b>'+m.n+'</b> '+m.l+'</div>').join('');
-startScene($('room'),160,104,D.anim,(t)=>{$('say').textContent=t});
+startScene($('room'),150,104,D.anim,(t)=>{$('say').textContent=t});
 </script></body></html>`;
 }
 
@@ -2068,7 +2091,7 @@ const s=(n,d=0)=>(n>0?'+':'')+f(n,d);const p=n=>isFinite(n)?(n>0?'+':'')+n.toFix
 const cl=n=>n>=0?'up':'down';const fp=x=>{const a=Math.abs(x);return f(x,a>=1000?0:a>=1?2:a>=.01?4:8)};
 function shade(h,k){const n=parseInt(h.slice(1),16);return '#'+[n>>16&255,n>>8&255,n&255].map(v=>Math.max(0,Math.min(255,Math.round(k<0?v*(1+k):v+(255-v)*k))).toString(16).padStart(2,'0')).join('')}
 ${ANIM_JS}
-startScene($('scene'),200,100,D.anim,(t)=>{$('say').textContent=t});
+startScene($('scene'),150,100,D.anim,(t)=>{$('say').textContent=t});
 $('mk').innerHTML=D.anim.mk.map(m=>'<span><span class="dot" style="background:'+m.c+'"></span><b>'+m.n+'</b> '+m.l+'</span>').join('');$('nm').textContent='♥ '+D.name;$('age').textContent='เลี้ยงมา '+D.age+' วัน';$('say').textContent=D.line;
 $('at').textContent='⟳ '+D.at;$('total').textContent='฿'+f(D.total);
 $('pl').innerHTML='<span class="'+cl(D.pl)+'">'+s(D.pl)+' ('+p(D.plPct)+')</span>';
@@ -2504,7 +2527,8 @@ async function alertFlow(data, S) {
   while (true) {
     const L = data.alerts;
     const mv = num(data.settings.moveAlert) || 0;
-    const opts = L.map((x) => `${x.on ? "🟢" : "⚪️"} ${alertLabel(x)}${x.on ? "" : x.firedAt ? " · แจ้งแล้ว" : " · ปิด"}`);
+    const held = (x) => !S || S.rows.some((r) => r.type === x.type && r.symbol === x.symbol);
+    const opts = L.map((x) => `${x.on ? "🟢" : "⚪️"} ${alertLabel(x)}${!held(x) ? " · ไม่ได้ถือแล้ว" : x.on ? "" : x.firedAt ? " · แจ้งแล้ว" : " · ปิด"}`);
     opts.push("➕ ตั้งแจ้งเตือนราคาใหม่", `📊 พอร์ตขยับแรงในวันเดียว (${mv > 0 ? "±" + mv + "%" : "ปิด"})`);
     const i = await ask("⏰ แจ้งเตือนราคา", "แจ้งครั้งเดียวเมื่อราคาแตะเป้า (แล้วปิดเอง แตะรายการเพื่อเปิดใหม่/ลบ)\nหุ้นนอกใช้ราคา USD · อย่างอื่นเป็นบาท · ไม่ใช้ AI", opts, "เสร็จ");
     if (i < 0) return;
