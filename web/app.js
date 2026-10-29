@@ -228,18 +228,56 @@ const qtyStr = (q, type) => fmt(q, type === "crypto" ? 8 : 4).replace(/(\.\d*?)0
 
 // ---------- ห้องแมว (แอนิเมชัน) ----------
 const ENGINE = makeCatEngine(SPR);
-const room = { seq: [["sit", 10]], idx: 0, t0: performance.now(), tap: null, act: null };
-function planRoom() {
-  const act = catActivity(S, data.settings);
-  room.act = act;
-  const pool = PLAY[act.mood] || PLAY.normal, base = act.a;
-  let seq;
-  if (base === "watchTH" || base === "watchUS") seq = [[base, 14], ["stretch", 4], [base, 12], ["groom", 5], ["walk", 12], [base, 10]];
-  else if (base === "sleep") seq = [["sleep", 24], ["stretch", 4], ["sleep", 20], ["loaf", 6]];
-  else if (base === "eat") seq = [["eat", 10], ["groom", 6], ["loaf", 6], ["walk", 10]];
-  else if (base === "ready") seq = [["ready", 8], ["stretch", 5], ["walk", 10], ["ready", 8]];
-  else seq = [[base, 12]].concat([...new Set(pool.concat(["walk", "watchFly", "groom", "loaf", "butterfly", "yarn"]))].filter((x) => x !== base).map((x) => [x, x === "zoomies" ? 6 : 10]));
-  if (JSON.stringify(seq) !== JSON.stringify(room.seq)) { room.seq = seq; room.idx = 0; room.t0 = performance.now(); }
+const room = { act: null, cur: "sit", until: 0, t0: performance.now(), tap: null, needs: needsAt(), fx: [], sq: null, trauma: 0, duty: 0 };
+const reduceMotion = () => !!(data.settings.reduceMotion || matchMedia("(prefers-reduced-motion: reduce)").matches);
+// วางแผนกิจกรรม: ช่วงตลาดเปิด = "งาน" (เฝ้ากราฟ) สลับพักสั้นๆ · เวลาว่าง = Utility AI เลือกตามความหิว/แรง/ความสนุก
+function planRoom() { room.act = catActivity(S, data.settings); }
+function nextActivity(now) {
+  const act = room.act || catActivity(S, data.settings);
+  const base = act.a, h = markets().bkk.min / 60;
+  const duty = base === "watchTH" || base === "watchUS" || base === "ready" || (base === "sleep" && (h >= 23.5 || h < 6));
+  let a, dur;
+  if (duty && room.duty < 2) { a = base; dur = base === "sleep" ? 30 : 14; room.duty++; }
+  else {
+    room.duty = 0;
+    a = utilityPick(room.needs, act.mood, { hour: h, current: room.cur });
+    if (a === "sleep" && !(h >= 22 || h < 7)) a = "loaf"; // กลางวันงีบแบบหมอบ
+    dur = a === "zoomies" ? 6 : a === "eat" ? 9 : 10 + Math.random() * 5;
+  }
+  room.cur = a; room.t0 = now; room.until = now + dur * 1000;
+}
+// ===== juice: เอฟเฟกต์ตอบสนองแบบเกม =====
+function addFx(f) {
+  if (reduceMotion() && (f.kind === "coins" || f.kind === "sparkle")) return;
+  if (f.kind === "num") f.dy = room.fx.filter((x) => x.kind === "num" && performance.now() - x.t0 < 1800).length * 8; // ซ้อนขึ้นไม่ทับกัน
+  room.fx.push(Object.assign({ t0: performance.now(), seed: Math.floor(Math.random() * 999) }, f)); }
+function bounce(amp = 0.45) { if (!reduceMotion()) room.sq = { t0: performance.now(), amp }; }
+function shake(tr = 0.5) { if (!reduceMotion()) room.trauma = Math.min(1, room.trauma + tr); }
+// ระดับความแรงตามความสำคัญ: เล็ก (เช็กอิน) / กลาง (เควส) / ใหญ่ (เลเวลอัป)
+function juice(evs) {
+  let delay = 0;
+  for (const e of evs) {
+    setTimeout(() => {
+      if (e.kind === "checkin" || e.kind === "green") { addFx({ kind: "num", text: `+${e.xp} EXP`, color: "#9BE7FF" }); bounce(0.25); }
+      else if (e.kind === "quest") { addFx({ kind: "num", text: `+${e.xp} EXP`, color: "#FFE38A" }); addFx({ kind: "coins", n: 10 }); bounce(0.4); shake(0.35); toast("🏆 " + e.text, 4000); }
+      else if (e.kind === "decor") toast("🎁 " + e.text, 4500);
+      else if (e.kind === "levelup") { addFx({ kind: "lvl", text: "LEVEL UP!", color: "#FFE38A" }); addFx({ kind: "sparkle" }); addFx({ kind: "coins", n: 14 }); bounce(0.55); shake(0.7); toast(`✨ เลเวลอัป! ตอนนี้ Lv.${e.lv}`, 4500); }
+      renderHome();
+    }, delay);
+    delay += 900;
+  }
+}
+let prevTotal = null;
+function gameAfterRefresh() {
+  if (!S) return;
+  if (prevTotal != null && Math.abs(S.total - prevTotal) >= 1) {
+    const d = S.total - prevTotal;
+    addFx({ kind: "num", text: (d > 0 ? "+" : "-") + fmt(Math.abs(d)), color: d > 0 ? "#7CF29A" : "#FF8A94" });
+    if (d > 0) bounce(0.2);
+  }
+  prevTotal = S.total;
+  const ev = gameTick(data, S, Date.now(), true);
+  if (ev.length) { save(); juice(ev); }
 }
 function startRoom() {
   const cv = $("room"), cw = 150, ch = 104, px = 3, ctx = cv.getContext("2d");
@@ -247,32 +285,54 @@ function startRoom() {
   const P = (x, y, w, h, c, a) => { if (w <= 0 || h <= 0) return; ctx.globalAlpha = a == null ? 1 : a; ctx.fillStyle = c; ctx.fillRect(Math.round(x * px), Math.round(y * px), w * px, h * px); ctx.globalAlpha = 1; };
   const PER = { walk: 16, yarn: 12, butterfly: 10, zoomies: 5 };
   const FT = { walk: .9, run: .45, yarn: .9, butterfly: .45, zoomies: .4, pounce: 1.6, eat: 1.2, sleep: 4, loaf: 4, groom: 2, stretch: 3, watchFly: 3 };
-  let lastLine = "";
-  cv.addEventListener("click", () => { room.tap = { a: Math.random() < 0.5 ? "zoomies" : "butterfly", until: performance.now() + 6000, t0: performance.now() }; });
-  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let lastLine = "", last = performance.now();
+  cv.addEventListener("click", () => {
+    room.tap = { a: Math.random() < 0.5 ? "zoomies" : "butterfly", until: performance.now() + 6000, t0: performance.now() };
+    room.needs.fun = Math.min(1, room.needs.fun + 0.25);
+    bounce(0.5); addFx({ kind: "num", text: "+1", color: "#FFB3C7" });
+  });
   function frame() {
+    const now = performance.now(), dt = Math.min(1, (now - last) / 1000); last = now;
+    room.trauma = Math.max(0, room.trauma - dt * 1.4);
+    // จอสั่นแบบ trauma² (นุ่ม ไม่สั่นมั่ว) ใช้กับ canvas เท่านั้น ไม่ยุ่งกับตัวแมว
+    const tr = room.trauma * room.trauma;
+    cv.style.transform = tr > 0.001 ? `translate(${(Math.sin(now / 23) * 6 * tr).toFixed(1)}px,${(Math.sin(now / 31) * 4 * tr).toFixed(1)}px) rotate(${(Math.sin(now / 41) * 1.2 * tr).toFixed(2)}deg)` : "";
     if (document.hidden || !$("tab-home").offsetParent) return;
-    const now = performance.now(); let a, el;
+    let a, el;
     if (room.tap && now < room.tap.until) { a = room.tap.a; el = (now - room.tap.t0) / 1000; }
     else {
-      room.tap = null; const cur = room.seq[room.idx]; el = (now - room.t0) / 1000;
-      if (el > cur[1]) { room.idx = (room.idx + 1) % room.seq.length; room.t0 = now; el = 0; }
-      a = room.seq[room.idx][0];
+      room.tap = null;
+      if (now >= room.until) nextActivity(now);
+      a = room.cur; el = (now - room.t0) / 1000;
     }
+    stepNeeds(room.needs, a, dt);
     const per = PER[a] || 4, t = (el % per) / per, ft = ((now / 1000) % (FT[a] || 2)) / (FT[a] || 2);
     const act = room.act || { mood: "normal", sleepy: false, seed: 1, M: markets() };
+    room.fx = room.fx.filter((f) => now - f.t0 < 2200);
+    let squash = 0;
+    if (room.sq) { const st = (now - room.sq.t0) / 1000; squash = room.sq.amp * Math.exp(-6 * st) * Math.cos(st * 22); if (st > 1) room.sq = null; }
     ctx.clearRect(0, 0, cv.width, cv.height);
     ENGINE.renderScene(P, {
       clock: now / 1000, w: cw, h: ch, activity: a, mood: room.tap ? "happy" : act.mood, sleepy: act.sleepy, t, ft, seed: act.seed % 97,
       hour: markets().bkk.min / 60, catColor: data.settings.catColor,
       chartUp: a === "watchUS" ? (S ? S.cats.us.day + S.cats.fund.day >= 0 : true) : (S ? S.cats.thai.day >= 0 : true),
-      catX: Math.round((cw - 34) * 0.35),
+      decor: (data.game && data.game.decor) || [], squash,
+      fx: room.fx.map((f) => Object.assign({}, f, { age: (now - f.t0) / 1000 })),
     });
     const ln = room.tap ? "เมี้ยว! เล่นด้วยกัน~" : actLine(S, Object.assign({}, act, { a }));
-    if (ln !== lastLine) { lastLine = ln; $("say").textContent = ln; }
+    if (ln !== lastLine) { lastLine = ln; typeSay(ln); }
   }
   frame();
-  setInterval(frame, reduce ? 1500 : 90);
+  setInterval(frame, reduceMotion() ? 1500 : 90);
+}
+// กล่องบทสนทนาแบบเกม: ตัวอักษรค่อยๆ ขึ้น
+let sayTimer = null;
+function typeSay(text) {
+  const el = $("say"); clearInterval(sayTimer);
+  if (reduceMotion()) { el.textContent = text; return; }
+  const chars = Array.from(text); let i = 0;
+  el.textContent = "";
+  sayTimer = setInterval(() => { i += 2; el.textContent = chars.slice(0, i).join(""); if (i >= chars.length) clearInterval(sayTimer); }, 30);
 }
 
 // ---------- หน้าหลัก ----------
@@ -300,6 +360,7 @@ function pixelDonut(cv) {
 function renderHome() {
   const st = data.settings, M = markets();
   $("catname").textContent = `♥ ${st.catName} · เลี้ยงมา ${catAgeDays(hist)} วัน`;
+  renderGame();
   const dot = (s) => (s.open ? "#3CCB6B" : ["pre", "break", "after"].includes(s.state) ? "#E8A33A" : "#8A8A8A");
   $("mk").innerHTML = [["🇹🇭 SET", M.th], ["🇺🇸 US", M.us]].map(([n, s]) => `<div><span class="dot" style="background:${dot(s)}"></span><b>${n}</b> ${esc(s.label)}</div>`).join("");
   if (!S) {
@@ -314,7 +375,7 @@ function renderHome() {
     <div class="pl"><span class="${S.pl >= 0 ? "u" : "d"}">${signed(S.pl)} (${pctStr(S.plPct)})</span> · <span class="${S.day >= 0 ? "u" : "d"}">วันนี้ ${signed(S.day)} (${pctStr(S.dayPct)})</span></div>`;
   if (st.goal > 0) {
     const pr = Math.max(0, Math.min(1, S.total / st.goal)), on = Math.round(pr * 20);
-    $("goal").innerHTML = `<div class="sub" style="margin-top:10px">EXP เป้าหมาย ฿${fmt(st.goal)} · ${(pr * 100).toFixed(1)}%</div><div class="exp">${Array.from({ length: 20 }, (_, i) => `<i class="${i < on ? "on" : ""}"></i>`).join("")}</div>`;
+    $("goal").innerHTML = `<div class="sub" style="margin-top:10px">🎯 เป้าหมาย ฿${fmt(st.goal)} · ${(pr * 100).toFixed(1)}%</div><div class="exp">${Array.from({ length: 20 }, (_, i) => `<i class="${i < on ? "on" : ""}"></i>`).join("")}</div>`;
   } else $("goal").innerHTML = "";
   const notes = [];
   if (isFinite(S.usdthb)) notes.push("USD/THB " + S.usdthb.toFixed(2));
@@ -332,6 +393,33 @@ function renderHome() {
   $("moves").innerHTML = mv.join("") || `<div class="sub">ยังไม่มีการเปลี่ยนแปลงวันนี้</div>`;
 }
 
+// ---------- เกม: เลเวล/เควส ----------
+// ระดับไอเท็มตามกำไร (แบบความหายากในเกม)
+function rarity(r) {
+  if (r.noCost || r.missingPrice) return { n: "?", c: "#8A8A8A" };
+  const p = r.plPct;
+  return p >= 100 ? { n: "LEGEND", c: "#E8892A" } : p >= 30 ? { n: "EPIC", c: "#9B59D6" } : p >= 10 ? { n: "RARE", c: "#3D8FE0" } : p >= 0 ? { n: "COMMON", c: "#4FA35E" } : { n: "CURSED", c: "#C9303C" };
+}
+function renderGame() {
+  const g = gameOf(data), L = lvInfo(g.xp);
+  $("lvbar").innerHTML = data.holdings.length ? `<span class="lv">Lv.${L.lv}</span><span class="bar" title="EXP ${L.into}/${L.need}"><i style="width:${(L.pct * 100).toFixed(1)}%"></i></span><span class="streak">🔥${g.streak} วัน</span>` : "";
+  if (!data.holdings.length) { $("questcard").hidden = true; return; }
+  $("questcard").hidden = false;
+  const q = questList(data, S);
+  $("quests").innerHTML = q.map((x) => `<div class="quest${x.done ? " done" : ""}${x.big ? " big" : ""}">
+      <div class="qt"><span>${x.icon} ${esc(x.title)}</span><span class="xp">+${x.xp} EXP</span></div>
+      <div class="qd">${esc(x.desc)}</div><div class="qb"><i style="width:${(x.pct * 100).toFixed(0)}%"></i></div></div>`).join("")
+    + `<div class="sub" style="margin-top:4px">EXP ${fmt(g.xp)} · อีก ${fmt(L.need - L.into)} ถึง Lv.${L.lv + 1} · ของแต่งห้อง:</div>
+      <div class="decor">${Object.entries(DECOR).map(([k, d]) => `<span class="${g.decor.includes(k) ? "" : "lock"}" title="${esc(d.how)}">${g.decor.includes(k) ? "✨" : "🔒"} ${esc(d.name)}</span>`).join("")}</div>
+      ${num(data.settings.dcaAmount) > 0 ? "" : `<div class="row" style="margin-top:8px"><button class="btn sm" id="setDca">💰 ตั้งยอด DCA ต่อเดือน</button></div>`}`;
+  const b = $("setDca");
+  if (b) b.onclick = async () => {
+    const r = await askDialog(`<h2>💰 ยอด DCA ต่อเดือน</h2><div class="sub">เควสจะนับยอดซื้อที่ลงวันที่ในเดือนนั้น ครบตามยอดได้ EXP + ของแต่งห้อง</div><label>บาทต่อเดือน</label><input name="v" inputmode="decimal" placeholder="เช่น 5000"><div class="acts"><button class="btn" value="cancel" formnovalidate>ยกเลิก</button><button class="btn pri" value="ok">บันทึก</button></div>`);
+    if (r.value !== "ok") return;
+    const v = num(r.fd.get("v")); data.settings.dcaAmount = v > 0 ? v : 0; save(); refresh(); toast("ตั้งเควส DCA แล้ว 💰");
+  };
+}
+
 // ---------- แท็บพอร์ต ----------
 function renderPort() {
   if (!S || !S.rows.length) {
@@ -343,8 +431,9 @@ function renderPort() {
     const region = r.type === "fund" ? (fi[r.symbol] ? REGION[fi[r.symbol].region] || "" : guessRegion(r.symbol) ? REGION.foreign + "?" : "") : "";
     const k = key(r.type, r.symbol), manual = data.manual[k] && !(feed && ((r.type === "thai" && feed.stocks[r.symbol + ".BK"]) || (r.type === "us" && feed.stocks[r.symbol]) || (r.type === "crypto" && feed.crypto[r.symbol])));
     const nav = r.type === "fund" ? data.navs[r.symbol] : null;
-    return `<div class="hold" data-i="${i}">
-      <div class="r1"><span><span class="sq" style="background:${CATS[r.cat].color}"></span>${esc(r.type === "gold" ? "ทองคำแท่ง 96.5%" : r.symbol)}${region ? `<span class="tag">${esc(region)}</span>` : ""}${r.missingPrice ? `<span class="tag warn">ไม่มีราคา</span>` : manual ? `<span class="tag">ราคากรอกเอง</span>` : ""}</span><span>฿${fmt(r.value)}</span></div>
+    const rr = rarity(r);
+    return `<div class="hold" data-i="${i}" style="--rar:${rr.c}">
+      <div class="r1"><span><span class="sq" style="background:${CATS[r.cat].color}"></span>${esc(r.type === "gold" ? "ทองคำแท่ง 96.5%" : r.symbol)}<span class="rar" title="ระดับตามกำไร">${rr.n}</span>${region ? `<span class="tag">${esc(region)}</span>` : ""}${r.missingPrice ? `<span class="tag warn">ไม่มีราคา</span>` : manual ? `<span class="tag">ราคากรอกเอง</span>` : ""}</span><span>฿${fmt(r.value)}</span></div>
       <div class="r2"><span>${qtyStr(r.qty, r.type)} ${TYPES[r.type].unit} · เฉลี่ย ฿${fmtPrice(r.avg)} · ล่าสุด ฿${fmtPrice(r.price)}${r.type === "us" && isFinite(r.native) ? ` ($${fmtPrice(r.native)})` : ""}</span><span class="${cl(r.pl)}" style="white-space:nowrap">${r.noCost ? "ไม่มีต้นทุน" : `${signed(r.pl)} (${pctStr(r.plPct)})`}</span></div>
       <div class="r2"><span>${CATS[r.cat].name}${nav ? ` · NAV ${nav.nav} (${esc(nav.date)})` : ""}${r.firstDate ? " · ซื้อครั้งแรก " + esc(r.firstDate) : ""}</span><span class="${cl(r.day)}">วันนี้ ${pctStr(r.dayPct)}</span></div>
     </div>`;
@@ -619,6 +708,8 @@ function renderSet() {
   $("sTheme").value = st.theme;
   $("sGoal").value = st.goal || "";
   $("sNotify").checked = st.notify !== false;
+  $("sDca").value = st.dcaAmount || "";
+  $("sReduce").checked = !!st.reduceMotion;
   renderAlerts();
   $("notifyNote").textContent = (IN_APP ? "แอปจะส่งแจ้งเตือนเองแม้ไม่ได้เปิด" : "แจ้งเตือนอัตโนมัติใช้ได้ในแอป Android และ iPhone (widget Scriptable) · ") + " คำนวณในเครื่องทั้งหมด ไม่ใช้ AI ไม่มีค่าใช้จ่าย · ตัวอย่าง:";
   if (S && S.rows.length) { const b = briefText(S, st, "evening"); $("briefPrev").textContent = b.title + "\n" + b.body; } else $("briefPrev").textContent = "เพิ่มพอร์ตก่อน แล้วจะเห็นตัวอย่างสรุปตรงนี้";
@@ -632,6 +723,8 @@ function bindSet() {
     st.theme = $("sTheme").value;
     const g = num($("sGoal").value); st.goal = g > 0 ? g : 0;
     st.notify = $("sNotify").checked;
+    { const v = num($("sDca").value); st.dcaAmount = v > 0 ? v : 0; }
+    st.reduceMotion = $("sReduce").checked; document.body.classList.toggle("rm", st.reduceMotion);
     save(); applyTheme(); refresh(); toast("บันทึกแล้ว 🐱");
   };
   $("briefTest").onclick = () => { pushWidget(); setTimeout(() => { try { if (!AndroidBridge.testBrief()) toast("ส่งไม่ได้ — อนุญาตการแจ้งเตือนของแอปในตั้งค่าเครื่องก่อน", 5000); } catch (e) {} }, 300); };
@@ -744,7 +837,7 @@ function showTab(t) {
   scrollTo(0, 0);
 }
 function refresh() {
-  recompute(); planRoom(); pushWidget(); webAlerts();
+  recompute(); planRoom(); pushWidget(); webAlerts(); gameAfterRefresh();
   // แต่ละส่วนวาดแยกกัน ส่วนไหนพังจะไม่ลากส่วนอื่นพังตาม
   for (const fn of [renderHome, renderPort]) { try { fn(); } catch (e) { toast("⚠︎ " + fn.name + ": " + e.message, 5000); } }
   if (currentTab === "chart") renderChart();
@@ -762,7 +855,7 @@ addEventListener("unhandledrejection", (e) => toast("⚠︎ " + ((e.reason && e.
     $("widgetNow").onclick = () => { pushWidget(); try { AndroidBridge.refreshWidget(); } catch (e) {} toast("กำลังอัปเดต widget… 🐱"); };
     save({ touch: false });
   }
-  applyTheme();
+  applyTheme(); document.body.classList.toggle("rm", !!data.settings.reduceMotion);
   document.querySelectorAll("nav.tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   $("addBtn").onclick = () => holdingForm(null, "เพิ่มรายการซื้อ");
   bindSet(); bindAlerts(); syncFiredFromApp();

@@ -78,7 +78,7 @@ function catGrid(mood, breed) {
 // @shared-end
 
 // ---------- เวอร์ชัน & อัปเดตอัตโนมัติ ----------
-const VERSION = "6.6.0";
+const VERSION = "6.7.0";
 const REPO = "perykung-alt/pixel-cat-portfolio";
 const UPDATE_BASE = `https://raw.githubusercontent.com/${REPO}/main/`;
 const REPO_URL = `https://github.com/${REPO}`;
@@ -631,7 +631,7 @@ function catActivity(S, settings, nowMs = Date.now()) {
   else if (H.us && M.us.state === "pre" && M.us.minsToOpen <= 30) a = "ready";
   else if (h >= 23.5 || h < 6) a = "sleep";
   else if (h < 9.5) a = pick(["stretch", "eat", "groom", "stretch"]);
-  else a = pick(PLAY[mood] || PLAY.normal);
+  else { let r = seed; a = utilityPick(needsAt(nowMs), mood, { hour: h, rand: () => ((r = (r * 9301 + 49297) % 233280) / 233280) }); } // Utility AI
   return { a, sleepy, mood, M, H, seed };
 }
 const ACT_LINES = {
@@ -710,6 +710,7 @@ function briefText(S, settings, slot) {
   const face = S.dayPct >= 1 ? "😸" : S.dayPct > 0 ? "😺" : S.dayPct <= -1 ? "🙀" : "🐱";
   const title = `${face} ${nm} สรุปพอร์ต${when} · ฿${compact(S.total)}`;
   const lines = [`${slot === "morning" ? "รอบล่าสุด" : "วันนี้"} ${signed(S.day)} ฿ (${pctStr(S.dayPct)}) · กำไรรวม ${signed(S.pl)} ฿ (${pctStr(S.plPct)})`];
+  if (settings && settings._dcaTodo) lines.push(`📜 เควส DCA เดือนนี้ยังไม่ทำ (เหลือ ${settings._dcaTodo} วัน)`);
   const cs = CAT_ORDER.filter((c) => S.cats[c].value > 0).map((c) => {
     const x = S.cats[c], prev = x.value - x.day;
     return `${CATS[c].short} ${pctStr(prev > 0 ? (x.day / prev) * 100 : 0)}`;
@@ -757,6 +758,138 @@ function checkAlerts(data, S, nowMs = Date.now()) {
     }
   }
   return out;
+}
+
+const gclamp = (v, a, b) => Math.max(a, Math.min(b, v));
+// ================= เกม: เลเวล / XP / เควส (v6.7) — คำนวณในเครื่อง ไม่ใช้ AI =================
+// data.game = { xp, streak, best, last, green, dcaStreak, dcaDone:{ "2026-10": true }, done:{ questId: ymd }, decor:[...] }
+const xpTotalFor = (lv) => 40 * lv * (lv - 1); // XP สะสมที่ต้องมีเพื่อถึงเลเวล lv (Lv2=80, Lv5=800, Lv10=3600)
+function lvInfo(xp) {
+  let lv = 1;
+  while (xp >= xpTotalFor(lv + 1)) lv++;
+  const a = xpTotalFor(lv), b = xpTotalFor(lv + 1);
+  return { lv, xp, into: xp - a, need: b - a, pct: (xp - a) / (b - a) };
+}
+const DECOR = {
+  plant2: { name: "ต้นมอนสเตอร่า", how: "เช็กพอร์ต 7 วันติด" },
+  trophy: { name: "ถ้วยรางวัล DCA", how: "DCA ครบ 3 เดือนติด" },
+  goldcat: { name: "รูปปั้นแมวทอง", how: "ถึง Lv.10" },
+  banner: { name: "ธงเป้าหมาย", how: "พอร์ตถึงเป้าหมาย" },
+  crown: { name: "มงกุฎนักลงทุน", how: "DCA ครบ 12 เดือนติด" },
+};
+function gameOf(data) {
+  const g = (data.game ||= {});
+  g.xp ||= 0; g.streak ||= 0; g.best ||= 0; g.dcaStreak ||= 0;
+  g.dcaDone ||= {}; g.done ||= {}; g.decor ||= [];
+  return g;
+}
+const ymOf = (ymdStr) => String(ymdStr || "").slice(0, 7);
+function prevYm(ym) { const [y, m] = ym.split("-").map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${pad(m - 1)}`; }
+// ยอดที่ลงทุนเพิ่มในเดือนนี้ (จากรายการซื้อที่ลงวันที่เดือนนั้น)
+function dcaProgress(data, ym, fx) {
+  let amt = 0, lots = 0;
+  for (const h of data.holdings || []) {
+    if (ymOf(h.date) !== ym) continue;
+    const f = h.type === "us" ? (num(h.fx) || fx || 33.5) : 1;
+    const v = (num(h.qty) || 0) * (num(h.avg) || 0) * f;
+    if (v > 0) { amt += v; lots++; }
+  }
+  const target = num(data.settings && data.settings.dcaAmount) || 0;
+  return { amt, lots, target, done: target > 0 ? amt >= target : lots > 0 };
+}
+// รายการเควสปัจจุบัน (ใช้แสดงผล)
+function questList(data, S, nowMs = Date.now()) {
+  const g = gameOf(data), today = bkkParts(nowMs), ym = today.ymd.slice(0, 7);
+  const dca = dcaProgress(data, ym, S && S.usdthb);
+  const goal = num(data.settings && data.settings.goal) || 0;
+  const daysLeft = new Date(Date.UTC(today.y, today.mo, 0)).getUTCDate() - today.d;
+  const q = [
+    { id: "dca-" + ym, icon: "💰", title: `DCA เดือนนี้${dca.target > 0 ? ` ฿${fmt(dca.target)}` : ""}`, big: true,
+      desc: dca.target > 0 ? `ลงทุนเพิ่มแล้ว ฿${fmt(dca.amt)} · เหลือ ${daysLeft} วัน · ติดต่อกัน ${g.dcaStreak} เดือน` : `เพิ่มรายการซื้ออย่างน้อย 1 รายการเดือนนี้ (ตั้งยอด DCA ได้) · ติดต่อกัน ${g.dcaStreak} เดือน`,
+      pct: dca.target > 0 ? Math.min(1, dca.amt / dca.target) : dca.lots ? 1 : 0, done: !!g.dcaDone[ym], xp: 150 },
+    { id: "streak7", icon: "🔥", title: "เช็กพอร์ต 7 วันติด", desc: `ติดต่อกัน ${g.streak} วัน (สูงสุด ${g.best})`, pct: Math.min(1, (g.streak % 7 || (g.streak ? 7 : 0)) / 7), done: g.streak > 0 && g.streak % 7 === 0 && g.done.streak7 === today.ymd, xp: 60 },
+    { id: "green", icon: "🟢", title: "วันนี้พอร์ตเขียว", desc: "แค่ถือไว้ ตลาดใจดีก็ได้ XP", pct: g.green === today.ymd ? 1 : 0, done: g.green === today.ymd, xp: 5 },
+  ];
+  if (goal > 0) q.push({ id: "goal", icon: "🎯", title: `พอร์ตถึงเป้า ฿${compact(goal)}`, desc: S ? `ตอนนี้ ฿${compact(S.total)} (${Math.min(100, (S.total / goal) * 100).toFixed(1)}%)` : "", pct: S ? Math.min(1, S.total / goal) : 0, done: !!g.done["goal-" + goal], xp: 300 });
+  return q;
+}
+// เดินเกม 1 ครั้ง (เปิดแอป/รีเฟรช): ให้ XP + ปลดล็อกของ คืนรายการเหตุการณ์ไว้ทำเอฟเฟกต์/แจ้งเตือน
+// countVisit=false สำหรับ widget (ไม่นับเป็นการเช็กพอร์ต)
+function gameTick(data, S, nowMs = Date.now(), countVisit = true) {
+  const ev = [];
+  if (!data || data.sample || !(data.holdings || []).length) return ev;
+  const g = gameOf(data), t = bkkParts(nowMs), today = t.ymd, ym = today.slice(0, 7);
+  const lv0 = lvInfo(g.xp).lv;
+  const give = (xp, kind, text) => { g.xp += xp; ev.push({ kind, xp, text }); };
+  const unlock = (k) => { if (!g.decor.includes(k)) { g.decor.push(k); ev.push({ kind: "decor", key: k, text: `ปลดล็อก ${DECOR[k].name}!` }); } };
+  if (countVisit && g.last !== today) {
+    const y = bkkParts(nowMs - 864e5).ymd;
+    g.streak = g.last === y ? g.streak + 1 : 1; g.best = Math.max(g.best, g.streak); g.last = today;
+    give(10 + Math.min(g.streak, 7) * 2, "checkin", `เช็กพอร์ตวันที่ ${g.streak} ติด`);
+    if (g.streak % 7 === 0) { g.done.streak7 = today; give(60, "quest", "เควสสำเร็จ: เช็กพอร์ต 7 วันติด"); unlock("plant2"); }
+  }
+  if (S && S.dayPct > 0 && g.green !== today && S.rows.some((r) => !r.missingPrice)) { g.green = today; give(5, "green", "พอร์ตเขียววันนี้"); }
+  // DCA รายเดือน
+  const dca = dcaProgress(data, ym, S && S.usdthb);
+  if (dca.done && !g.dcaDone[ym]) {
+    g.dcaDone[ym] = true;
+    g.dcaStreak = g.dcaDone[prevYm(ym)] ? g.dcaStreak + 1 : 1;
+    give(150 + Math.min(g.dcaStreak, 12) * 10, "quest", `เควสสำเร็จ: DCA เดือนนี้ (ติดต่อกัน ${g.dcaStreak} เดือน)`);
+    if (g.dcaStreak >= 3) unlock("trophy");
+    if (g.dcaStreak >= 12) unlock("crown");
+  }
+  const goal = num(data.settings && data.settings.goal) || 0;
+  if (goal > 0 && S && S.total >= goal && !g.done["goal-" + goal]) { g.done["goal-" + goal] = today; give(300, "quest", "เควสสำเร็จ: พอร์ตถึงเป้าหมาย!"); unlock("banner"); }
+  const lv1 = lvInfo(g.xp).lv;
+  if (lv1 >= 10) unlock("goldcat");
+  if (lv1 > lv0) ev.push({ kind: "levelup", lv: lv1, text: `LEVEL UP! Lv.${lv1}` });
+  return ev;
+}
+
+// ================= Utility AI: แมวเลือกกิจกรรมเองจาก "ความต้องการ" =================
+// needs 0..1: hunger (หิว), energy (มีแรง), fun (สนุก) — คะแนนผ่านเส้นโค้ง แล้วเลือกค่าสูงสุด (+กันสลับไปมา)
+const UCURVE = { quad: (x) => x * x, lin: (x) => x, inv: (x) => 1 - x, sig: (x) => 1 / (1 + Math.exp(-10 * (x - 0.5))) };
+function utilityScores(n, mood, ctx = {}) {
+  const c = (v) => gclamp(v, 0, 1), sad = mood === "sad", hap = mood === "happy" || mood === "wow";
+  const night = ctx.hour != null && (ctx.hour >= 23 || ctx.hour < 6);
+  const play = c(1 - n.fun) * c(n.energy) * (hap ? 1.25 : sad ? 0.55 : 1);
+  return {
+    eat: UCURVE.sig(n.hunger) * 0.95,
+    sleep: UCURVE.quad(c(1 - n.energy)) * (night ? 1.4 : 0.9),
+    loaf: 0.18 + c(1 - n.energy) * 0.35,
+    butterfly: play * 0.9, yarn: play * 0.8, watchFly: play * 0.55 + 0.05,
+    zoomies: mood === "wow" ? play * 1.1 : play * 0.25,
+    walk: 0.22 + c(n.energy) * 0.12, groom: 0.2 + (sad ? 0.05 : 0.08), stretch: n.energy < 0.4 ? 0.3 : 0.12,
+    sulk: sad ? 0.5 : 0,
+  };
+}
+function utilityPick(n, mood, ctx = {}) {
+  const s = utilityScores(n, mood, ctx);
+  if (ctx.current && s[ctx.current] != null) s[ctx.current] -= 0.15; // hysteresis: ไม่ทำซ้ำเดิมทันที
+  let best = "walk", bv = -1, r = ctx.rand || Math.random;
+  for (const [k, v] of Object.entries(s)) { const val = v + r() * 0.06; if (val > bv) { bv = val; best = k; } }
+  return best;
+}
+// ผลของกิจกรรมต่อความต้องการ (ต่อวินาทีโดยประมาณ)
+const NEED_FX = {
+  eat: { hunger: -0.08, energy: 0.005 }, sleep: { energy: 0.04, hunger: 0.004 }, loaf: { energy: 0.012 },
+  butterfly: { fun: 0.05, energy: -0.02, hunger: 0.006 }, yarn: { fun: 0.045, energy: -0.012 }, zoomies: { fun: 0.07, energy: -0.035, hunger: 0.01 },
+  watchFly: { fun: 0.02 }, walk: { fun: 0.01, energy: -0.004 }, groom: { fun: 0.006 }, stretch: { energy: 0.01 }, sulk: { fun: -0.002 },
+};
+function stepNeeds(n, act, dt) {
+  const f = NEED_FX[act] || {};
+  n.hunger = gclamp(n.hunger + 0.003 * dt + (f.hunger || 0) * dt, 0, 1);
+  n.energy = gclamp(n.energy - 0.0025 * dt + (f.energy || 0) * dt, 0, 1);
+  n.fun = gclamp(n.fun - 0.006 * dt + (f.fun || 0) * dt, 0, 1);
+  return n;
+}
+// ความต้องการตามเวลาจริง (สำหรับ widget ที่ขยับเองไม่ได้): หิวก่อนมื้อ, ง่วงตอนดึก/บ่าย, เบื่อสุ่มตามช่วง
+function needsAt(nowMs = Date.now()) {
+  const h = bkkParts(nowMs).min / 60;
+  const meals = [7, 12.5, 18.5], since = Math.min(...meals.map((m) => ((h - m) + 24) % 24));
+  const energy = gclamp(0.9 - Math.max(0, h - 13) * 0.04 - (h < 6 ? 0.6 : 0) + (h >= 6 && h < 9 ? 0.05 : 0), 0, 1);
+  const fun = (Math.sin(nowMs / 2.7e6) + 1) / 2;
+  return { hunger: gclamp(since / 6, 0, 1), energy, fun };
 }
 
 // @shared-end
@@ -1176,7 +1309,9 @@ function makeCatEngine(SPR) {
   }
 
   // ---------- palettes ----------
+  const GOLD_PAL = { K: "#5A3A0C", O: "#F2C230", D: "#C8901E", L: "#FFF1A8", P: "#FFD27A", N: "#C8901E", E: "#7A4A0C", W: "#FFFFFF", M: "#FFF1A8" };
   function catPalette(name) {
+    if (name === "gold") return Object.assign({}, SPR.fixed, GOLD_PAL); // รูปปั้นแมวทอง (ของแต่งห้อง)
     return Object.assign({}, SPR.fixed, SPR.palettes[name] || SPR.palettes.orange);
   }
   function breedOpts(name) {
@@ -1242,6 +1377,32 @@ function makeCatEngine(SPR) {
   const LIGHT = (() => { const v = [-0.6, 0.15, 1], n = Math.hypot(v[0], v[1], v[2]); return v.map((a) => a / n); })();
   const IRIS = { orange: "#3FAE5E", gray: "#E8A93A", black: "#F2C230", white: "#4A8BEA", calico: "#D98A2B", scottish: "#C9893A", british: "#E39B2E", siamese: "#3D7FE0" };
   const S_BLUSH = new Set(["sit", "work"]);
+  // ฟอนต์พิกเซล 3x5 สำหรับตัวเลขลอย/LEVEL UP (มีขอบเข้ม อ่านง่ายบนทุกพื้น)
+  const FONT3 = {
+    "0": "111101101101111", "1": "010110010010111", "2": "111001111100111", "3": "111001111001111", "4": "101101111001001",
+    "5": "111100111001111", "6": "111100111101111", "7": "111001010010010", "8": "111101111101111", "9": "111101111001111",
+    "+": "000010111010000", "-": "000000111000000", ",": "000000000010100", ".": "000000000000010", "%": "101001010100101",
+    "L": "100100100100111", "V": "101101101101010", "U": "101101101101111", "P": "110101110100100", "E": "111100110100111",
+    "X": "101101010101101", "!": "010010010000010", "B": "110101110101110", " ": "000000000000000", "K": "101101110101101", "M": "101111111101101",
+  };
+  function pixText(put, str, x0, y0, sz = 1, col = "#FFE38A", ink = "#3B2418") {
+    let x = x0;
+    for (const ch of String(str)) {
+      const g = FONT3[ch] || FONT3[" "];
+      if (put) {
+        for (const pass of [0, 1]) for (let i = 0; i < 15; i++) {
+          if (g[i] !== "1") continue;
+          const gx = x + (i % 3) * sz, gy = y0 + Math.floor(i / 3) * sz;
+          for (let a = 0; a < sz; a++) for (let b = 0; b < sz; b++) {
+            if (pass === 0) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1]]) put(gx + a + dx, gy + b + dy, ink);
+            else put(gx + a, gy + b, col);
+          }
+        }
+      }
+      x += 4 * sz;
+    }
+    return x - x0 - sz;
+  }
   const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // 0=ขวาล่าง 1=ซ้ายล่าง 2=ซ้ายบน(หันหลัง) 3=ขวาบน
 
   // ---------- แมวแบบ voxel: ใช้ท่าเดิม (มุมข้าง) มาปั้นเป็น 3 มิติ แล้วฉายแบบ isometric ----------
@@ -1448,7 +1609,8 @@ function makeCatEngine(SPR) {
     const bowl = { x: A - Math.max(6, Math.round(8 * k)), y: Math.max(7, Math.round(Bd * 0.2)) }; // ฝั่งขวาของจอ ใต้ต้นไม้ นอกทางเดินแมว
 
     // ---------- เลเยอร์นิ่ง (cache) ----------
-    const key = [w, h, Math.floor(hour), S.chartUp !== false, S.activity === "watchUS"].join("|");
+    const decor = S.decor || [];
+    const key = [w, h, Math.floor(hour), S.chartUp !== false, S.activity === "watchUS", decor.join(",")].join("|");
     let base = staticCache.get(key);
     if (!base) {
       const fb = new Array(w * h).fill(null);
@@ -1567,6 +1729,34 @@ function makeCatEngine(SPR) {
       const bs = Math.max(3.5, 4.5 * k);
       box(bowl.x, bowl.y, 0, bs, bs, 1.8, (u, v) => (u > 0.8 && v > 0.8 && u < bs - 0.8 && v < bs - 0.8 ? "#C8782E" : "#E2464F"), "#E2464F", "#B5323B", "#5A1E26");
       if (k > 0.8) face([bowl.x + 1, bowl.y + 1, 2], [1, 0, 0], [0, 1, 0], bs - 2, bs - 2, (u, v) => ((Math.floor(u * 2) + Math.floor(v * 2)) % 3 ? "#E8A050" : "#B8642A"));
+      // ===== ของแต่งห้องที่ปลดล็อกจากเควส/เลเวล =====
+      if (decor.includes("plant2")) { // มอนสเตอร่าข้างชั้นหนังสือ
+        const px2 = shx + shw + 2, ps = Math.max(4, Math.round(4.5 * k));
+        box(px2, 1, 0, ps, ps, ps * 0.8, "#5E3820", "#E8E0D0", "#C9BFAE", "#3B2418");
+        for (let i = 0; i < 4; i++) box(px2 - 1 + (i % 2) * (ps * 0.5), 0.5 + Math.floor(i / 2) * (ps * 0.4), ps * 0.8 + i * ps * 0.35, ps * 0.7, ps * 0.6, ps * 0.45, (u, v) => (hash(Math.floor(u), Math.floor(v), 9 + i) > 0.75 ? "#7FC85A" : "#3E9A4A"), "#2F7E3A", "#246A30", "#1E4A22");
+      }
+      if (decor.includes("trophy")) { // ถ้วยทองบนชั้นหนังสือ
+        const tx = shx + shw * 0.35, tz = shh, tsz = Math.max(2.5, 3 * k);
+        box(tx, 0.8, tz, tsz, tsz, 1, "#8E5534", "#7A4A2A", "#5E3820", "#3B2418");
+        box(tx + 0.4, 1.2, tz + 1, tsz - 0.8, tsz - 0.8, tsz * 1.1, "#FFE38A", "#F2C230", "#C8901E", "#6B4A10");
+        box(tx - 0.3, 0.5, tz + 1 + tsz * 1.1, tsz + 0.6, tsz + 0.6, 0.8, "#FFF1A8", "#F2C230", "#C8901E", "#6B4A10");
+      }
+      if (decor.includes("banner")) { // ธงเป้าหมายบนผนังซ้ายเหนือเตียง
+        const by0 = bed.y + 2, bw = Math.max(6, Math.round(bed.dy * 0.5)), bz = Math.round(Hw * 0.5), bh = Math.round(Hw * 0.4);
+        face([0, by0, bz], [0, 1, 0], [0, 0, 1], bw, bh, (u, v) => {
+          const cut = v < (bh * 0.35) * (1 - Math.abs(u - bw / 2) / (bw / 2));
+          if (cut) return null;
+          if (v > bh - 1.2) return "#6B3E22";
+          return Math.abs(u - bw / 2) < 1.2 && v > bh * 0.45 && v < bh * 0.8 ? "#FFE38A" : "#E2464F";
+        });
+      }
+      if (decor.includes("goldcat")) { // รูปปั้นแมวทองบนแท่น ปลายเตียง
+        const gx = bed.x + bed.dx + 2.5, gy = Bd - Math.max(5, Math.round(6 * k)), ph = Math.max(2, 2.5 * k);
+        box(gx - 2, gy - 2, 0, 5, 5, ph, "#E8E0D0", "#C9BFAE", "#A89E8E", "#5E554A");
+        const gs = catSprite("sit", 0.25, "gold", 0, Math.max(0.3, sc * 0.55), { eyes: "happy" });
+        const ox2 = X(gx + 0.5, gy + 0.5), oy2 = Y(gx + 0.5, gy + 0.5, ph);
+        for (const [x, y, c] of gs.pix) put(ox2 + x, oy2 + y, c);
+      }
 
       // กลางคืน: ห้องมืดลง + แสงไฟอุ่น
       if (night || sky.dawn) {
@@ -1671,9 +1861,20 @@ function makeCatEngine(SPR) {
     for (const f of pre) f();
     const spr = catSprite(pose, ft, S.catColor, dir, sc, o);
     const tintC = night ? "#1B1840" : null;
-    for (const [x, y, c] of spr.pix) put(sx0 + x, sy0 + y, tintC ? mix(c, tintC, 0.22) : c);
+    // squash & stretch (แตะแมว/เลเวลอัป): ยืดหดรอบเท้า แล้วเด้งกลับ (ผู้เรียกส่งค่าที่ค่อยๆ หมดไป)
+    const sq = clamp(S.squash || 0, -0.6, 0.6), kx = 1 + sq * 0.35, ky = 1 - sq * 0.35;
+    for (const [x, y, c] of spr.pix) {
+      const cc2 = tintC ? mix(c, tintC, 0.22) : c;
+      if (!sq) { put(sx0 + x, sy0 + y, cc2); continue; }
+      const X0 = Math.floor(sx0 + x * kx), X1 = Math.floor(sx0 + (x + 1) * kx), Y0 = Math.floor(sy0 + y * ky), Y1 = Math.floor(sy0 + (y + 1) * ky);
+      for (let yy = Y0; yy < Math.max(Y1, Y0 + 1); yy++) for (let xx = X0; xx < Math.max(X1, X0 + 1); xx++) put(xx, yy, cc2);
+    }
     for (const f of extras) f();
-    const hx = sx0 + spr.head[0], hy = sy0 + spr.head[1];
+    const hx = sx0 + Math.round(spr.head[0] * kx), hy = sy0 + Math.round(spr.head[1] * ky);
+    if (decor.includes("crown") && pose !== "sleep") { // มงกุฎบนหัว (DCA 12 เดือน)
+      const CR = ["Y.Y.Y", "YRYRY", "YYYYY"];
+      CR.forEach((row, y) => { for (let x = 0; x < 5; x++) if (row[x] !== ".") put(hx - 2 + x, hy - 3 + y, row[x] === "R" ? "#E2464F" : "#F2C230"); });
+    }
     if (A2 === "sleep") { const zt = Math.floor(t * 3); for (let i = 0; i <= zt; i++) pr("z", hx + 3 + i * 3, hy - 4 - i * 4); }
     // อีโมตในฟองคำพูดเหนือหัว (สไตล์เกม MMO) — แอปจะโผล่เป็นจังหวะ, widget โชว์ค้าง
     let emo = null;
@@ -1705,6 +1906,29 @@ function makeCatEngine(SPR) {
       const IC = { R: "#E8434F", K: "#3B2418", B: "#4FB0F0", Y: "#F2C230", O: "#B5781A" };
       ICON.forEach((row, y) => { for (let x = 0; x < 5; x++) if (row[x] !== ".") put(ex + 3 + x, ey + 2 + y, IC[row[x]]); });
     }
+    // ===== เอฟเฟกต์เกม (juice): ตัวเลขลอย / เหรียญกระเด็น / LEVEL UP — S.fx = [{kind, text, age, color, seed}] =====
+    for (const f of S.fx || []) {
+      const age = f.age || 0;
+      if (f.kind === "num" || f.kind === "lvl") {
+        // ตัวเลขลอยขึ้นแบบดาเมจในเกม: เด้งขึ้นเร็วแล้วชะลอ (ease-out) แล้วหายไป
+        const rise = 14 * (1 - Math.pow(1 - Math.min(1, age / 1.2), 3));
+        const big = f.kind === "lvl", sz = big ? 2 : 1;
+        const tw = pixText(null, f.text, 0, 0, sz);
+        if (age < 1.8) pixText(put, f.text, Math.round(hx - tw / 2 + (f.dx || 0)), Math.round(hy - 14 - rise - (big ? 8 : 0) - (f.dy || 0)), sz, f.color || "#FFE38A", "#3B2418");
+      } else if (f.kind === "coins") {
+        // เหรียญพุ่งออกจากตัวแมว: ความเร็วต้น + แรงโน้มถ่วง
+        for (let i = 0; i < (f.n || 8); i++) {
+          const a = hash(i, f.seed || 1, 3) * Math.PI - Math.PI, sp = 18 + hash(i, f.seed || 1, 4) * 18;
+          const x = hx + Math.cos(a) * sp * age, y = hy - 4 + Math.sin(a) * sp * age + 40 * age * age;
+          if (age < 1.2) pr("coin", x - 2, y - 2);
+        }
+      } else if (f.kind === "sparkle") {
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * TAU + age * 2, rr = 6 + age * 22;
+          if (age < 1) put(hx + Math.cos(a) * rr, hy - 2 + Math.sin(a) * rr * 0.6, i % 2 ? "#FFF6B0" : "#FFFFFF");
+        }
+      }
+    }
     // วาดออกจอ (รวมช่วงสีเดียวกันเป็นสี่เหลี่ยมเดียว)
     for (let y = 0; y < h; y++) {
       let x = 0;
@@ -1733,7 +1957,7 @@ function sceneImage(S, act, settings, wPt, hPt, ptPerCell = 1) {
   CAT_ENGINE.renderScene(P, {
     w: cw, h: ch, activity: act.a, mood: act.mood, sleepy: act.sleepy,
     t: ((sd * 0.618) % 1), ft: ((sd * 0.377) % 1), seed: sd % 97, hour: act.M.bkk.min / 60,
-    catColor: settings.catColor, chartUp: act.a === "watchUS" ? usUp : thUp,
+    catColor: settings.catColor, chartUp: act.a === "watchUS" ? usUp : thUp, decor: settings._decor || [],
     catX: Math.round(((sd * 13) % Math.max(1, cw - 34))),
   });
   return dc.getImage();
@@ -1951,7 +2175,7 @@ function buildWidget(S, hist, family, settings) {
   const si = sc.addImage(sceneImage(S, act, settings, 334, 90)); si.imageSize = new Size(334, 90);
   w.addSpacer(5);
   const nm = w.addStack(); nm.layoutHorizontally(); nm.centerAlignContent();
-  txt(nm, "♥ " + settings.catName, 11, { w: "heavy" });
+  txt(nm, "♥ " + settings.catName + (settings._lv ? ` · Lv.${settings._lv}` : ""), 11, { w: "heavy" });
   nm.addSpacer(6);
   txt(nm, line, 10, { w: "semi", color: T.sub, scale: 0.6 });
   nm.addSpacer();
@@ -2020,7 +2244,7 @@ function animPayload(S, act, settings) {
   for (const [a] of seq.concat([["zoomies"], ["butterfly"]])) lines[a] = actLine(S, Object.assign({}, act, { a }));
   const dot = (st) => (st.open ? "#3CCB6B" : st.state === "pre" || st.state === "break" || st.state === "after" ? "#E8A33A" : "#8A8A8A");
   return {
-    seq, lines, mood: act.mood, sleepy: act.sleepy, cat: settings.catColor, hour: act.M.bkk.min / 60, seed: act.seed % 97,
+    seq, lines, mood: act.mood, sleepy: act.sleepy, cat: settings.catColor, hour: act.M.bkk.min / 60, seed: act.seed % 97, decor: settings._decor || [],
     thUp: S ? S.cats.thai.day >= 0 : true, usUp: S ? S.cats.us.day + S.cats.fund.day >= 0 : true,
     mk: [{ n: "🇹🇭 SET", l: act.M.th.label, c: dot(act.M.th) }, { n: "🇺🇸 US", l: act.M.us.label, c: dot(act.M.us) }],
   };
@@ -2038,7 +2262,7 @@ function startScene(cv,cw,ch,A,onLine){
     if(tap&&now<tap.until){a=tap.a;el=(now-tap.t0)/1000}else{tap=null;let cur=A.seq[idx];el=(now-t0)/1000;if(el>cur[1]){idx=(idx+1)%A.seq.length;t0=now;el=0}a=A.seq[idx][0]}
     const per=PER[a]||4,t=(el%per)/per,ft=((now/1000)%(FT[a]||2))/(FT[a]||2);
     ctx.clearRect(0,0,cv.width,cv.height);
-    ENGINE.renderScene(P,{clock:now/1000,w:cw,h:ch,activity:a,mood:tap?'happy':A.mood,sleepy:A.sleepy,t,ft,seed:A.seed,hour:A.hour,catColor:A.cat,chartUp:a==='watchUS'?A.usUp:A.thUp,catX:Math.round((cw-34)*.35)});
+    ENGINE.renderScene(P,{decor:A.decor||[],clock:now/1000,w:cw,h:ch,activity:a,mood:tap?'happy':A.mood,sleepy:A.sleepy,t,ft,seed:A.seed,hour:A.hour,catColor:A.cat,chartUp:a==='watchUS'?A.usUp:A.thUp,catX:Math.round((cw-34)*.35)});
     const ln=tap?'เมี้ยว! เล่นด้วยกัน~':(A.lines[a]||'');if(ln!==lastLine&&onLine){lastLine=ln;onLine(ln)}
   }
   frame();setInterval(frame,90);
@@ -2592,6 +2816,36 @@ async function catFlow(data) {
   writeJSON(F_DATA, data);
 }
 
+// ค่าตั้งค่า + ข้อมูลเกมชั่วคราว (ไม่บันทึกลงไฟล์) สำหรับ widget/แจ้งเตือน
+function gameSettings(data) {
+  const g = data.game || {}, t = bkkParts(Date.now()), ym = t.ymd.slice(0, 7);
+  const daysLeft = new Date(Date.UTC(t.y, t.mo, 0)).getUTCDate() - t.d;
+  const todo = !data.sample && (data.holdings || []).length && !(g.dcaDone || {})[ym] && t.d >= 20 ? daysLeft : 0;
+  return Object.assign({}, data.settings, { _decor: g.decor || [], _lv: g.xp ? lvInfo(g.xp).lv : 0, _dcaTodo: todo });
+}
+async function gameAlert(evs, data) {
+  const L = lvInfo(gameOf(data).xp);
+  const lines = evs.map((e) => (e.kind === "levelup" ? `✨ ${e.text}` : e.kind === "decor" ? `🎁 ${e.text}` : `+${e.xp} EXP · ${e.text}`));
+  const lvUp = evs.some((e) => e.kind === "levelup");
+  if (!lvUp && evs.every((e) => e.kind === "checkin" || e.kind === "green")) return; // เช็กอินธรรมดาไม่ต้องเด้ง
+  await info(lvUp ? `✨ LEVEL UP! Lv.${L.lv}` : "🏆 เควสสำเร็จ!", lines.join("\n"));
+}
+async function questFlow(data, S) {
+  while (true) {
+    const g = gameOf(data), L = lvInfo(g.xp), q = questList(data, S);
+    const bar = "▰".repeat(Math.round(L.pct * 10)) + "▱".repeat(10 - Math.round(L.pct * 10));
+    const msg = `Lv.${L.lv}  ${bar}  ${L.into}/${L.need} EXP\n🔥 เช็กพอร์ตติดกัน ${g.streak} วัน · DCA ติดกัน ${g.dcaStreak} เดือน\n\n` +
+      q.map((x) => `${x.done ? "✅" : x.icon} ${x.title} (+${x.xp})\n   ${x.desc}`).join("\n") +
+      `\n\nของแต่งห้อง: ${Object.entries(DECOR).map(([k, d]) => (g.decor.includes(k) ? "✨" : "🔒") + d.name).join(" · ")}`;
+    const i = await ask("📜 เลเวล & เควส", msg, [`💰 ตั้งยอด DCA ต่อเดือน (${num(data.settings.dcaAmount) > 0 ? "฿" + fmt(data.settings.dcaAmount) : "ยังไม่ตั้ง"})`], "ปิด");
+    if (i < 0) return;
+    const a = new Alert(); a.title = "💰 ยอด DCA ต่อเดือน"; a.message = "เควสนับยอดซื้อที่ลงวันที่ในเดือนนั้น (0 = แค่มีรายการซื้อ 1 รายการ)";
+    const t = a.addTextField("บาท", data.settings.dcaAmount ? String(data.settings.dcaAmount) : ""); t.setDecimalPadKeyboard();
+    a.addAction("บันทึก"); a.addCancelAction("ยกเลิก");
+    if ((await a.presentAlert()) === 0) { const v = num(a.textFieldValue(0)); data.settings.dcaAmount = v > 0 ? v : 0; writeJSON(F_DATA, data); }
+  }
+}
+
 async function alertFlow(data, S) {
   data.alerts ||= [];
   while (true) {
@@ -2698,19 +2952,22 @@ async function loadAll() {
 async function appMenu() {
   while (true) {
     const { data, S, hist } = await loadAll();
-    const st = data.settings;
+    // เกม: เช็กอินรายวัน / เควส / เลเวล (นับเฉพาะตอนเปิดแอป ไม่นับ widget)
+    const gev = gameTick(data, S, Date.now(), true);
+    if (gev.length) { writeJSON(F_DATA, data); await gameAlert(gev, data); }
+    const st = data.settings, gst = gameSettings(data); // st = ตัวจริง (แก้แล้วบันทึก), gst = สำเนา + ข้อมูลเกมไว้แสดงผล
     const act = catActivity(S, st);
-    if (!data.sample) { await maybeBrief(S, st); await maybeAlerts(data, S); }
+    if (!data.sample) { await maybeBrief(S, gst); await maybeAlerts(data, S); }
     const note = await updateNotice();
     const msg = (note ? note + "\n\n" : "") + (S ? `฿${fmt(S.total)}  ${signed(S.pl)} (${pctStr(S.plPct)})\n` : "") + `🐱 ${st.catName}: "${actLine(S, act)}"\n🇹🇭 SET ${act.M.th.label}\n🇺🇸 US ${act.M.us.label}`;
     const opts = ["🐾 ห้องแมว (แมวขยับได้)", "📊 ดูพอร์ตและกราฟ", "📸 นำเข้าจากรูปด้วย AI (หลายรายการ)", "➕ เพิ่มรายการซื้อ", "✏️ แก้ไข / ลบรายการ", "📝 อัปเดต NAV กองทุน",
-      "🐱 ตั้งค่าแมว / ธีม", "🎯 ตั้งเป้าหมายพอร์ต", `🔔 แจ้งเตือนสรุปพอร์ต (${st.notify === false ? "ปิด" : "เปิด"})`, `⏰ แจ้งเตือนราคา (${(data.alerts || []).filter((x) => x.on).length})`, "👁 พรีวิว Widget", "🔑 Bitkub API (ไม่บังคับ)", "💾 สำรอง / กู้คืนข้อมูล", `🔄 อัปเดต (v${VERSION})`, "📤 แชร์ให้เพื่อน"];
+      `📜 เลเวล & เควส (Lv.${lvInfo(gameOf(data).xp).lv})`, "🐱 ตั้งค่าแมว / ธีม", "🎯 ตั้งเป้าหมายพอร์ต", `🔔 แจ้งเตือนสรุปพอร์ต (${st.notify === false ? "ปิด" : "เปิด"})`, `⏰ แจ้งเตือนราคา (${(data.alerts || []).filter((x) => x.on).length})`, "👁 พรีวิว Widget", "🔑 Bitkub API (ไม่บังคับ)", "💾 สำรอง / กู้คืนข้อมูล", `🔄 อัปเดต (v${VERSION})`, "📤 แชร์ให้เพื่อน"];
     if (!data.holdings.length) opts.push("🧪 ใส่ข้อมูลตัวอย่างเพื่อทดลอง");
     if (data.sample) opts.push("🧹 ล้างข้อมูลตัวอย่าง");
     const i = await ask(`PIXEL CAT PORTFOLIO v${VERSION}`, msg, opts, "ปิด");
     if (i < 0) return;
     const pick = opts[i];
-    if (pick.startsWith("🐾")) await WebView.loadHTML(roomHTML(S, hist, st), null, null, true);
+    if (pick.startsWith("🐾")) await WebView.loadHTML(roomHTML(S, hist, gst), null, null, true);
     else if (pick.startsWith("📊")) { if (S) await WebView.loadHTML(reportHTML(S, hist, st), null, null, true); else await info("ยังไม่มีข้อมูล", "เพิ่มรายการซื้อก่อน"); }
     else if (pick.startsWith("➕")) { if (data.sample) { data.holdings = []; data.navs = {}; delete data.sample; } await addFlow(data); }
     else if (pick.startsWith("📸")) await aiImportFlow(data);
@@ -2719,6 +2976,7 @@ async function appMenu() {
     else if (pick.startsWith("🐱")) await catFlow(data);
     else if (pick.startsWith("🎯")) await goalFlow(data);
     else if (pick.startsWith("⏰")) await alertFlow(data, S);
+    else if (pick.startsWith("📜")) await questFlow(data, S);
     else if (pick.startsWith("🔔")) {
       const on = st.notify !== false;
       const j = await ask("🔔 แจ้งเตือนสรุปพอร์ต", "แมวจะส่งสรุปสั้นๆ วันละ 2 รอบ\n• เย็น หลังตลาดหุ้นไทยปิด (16:45)\n• เช้า หลังตลาดอเมริกาปิด (7:00)\n\nคำนวณในเครื่องทั้งหมด ไม่ใช้ AI ไม่เสียค่าใช้จ่าย\n(ต้องมี widget อยู่บนหน้าจอ แจ้งเตือนจะมาตอน widget รีเฟรช อาจช้ากว่าเวลาเล็กน้อย)",
@@ -2737,7 +2995,7 @@ async function appMenu() {
       const j = await ask("พรีวิว", null, fams.map((f) => f[1]));
       if (j >= 0) {
         const [fam, , fn] = fams[j];
-        const w = buildWidget(S, hist, fam, st);
+        const w = buildWidget(S, hist, fam, gst);
         if (typeof w[fn] === "function") await w[fn]();
         else await info("พรีวิวไม่ได้", "Scriptable เวอร์ชันนี้ยังพรีวิวล็อกสกรีนไม่ได้ ให้เพิ่ม widget ที่หน้าจอล็อกเพื่อดูได้เลย");
       }
@@ -2752,8 +3010,8 @@ if (config.runsInWidget || config.runsInAccessoryWidget) {
   let w;
   try {
     const { data, S, hist } = await loadAll();
-    w = buildWidget(S, hist, config.widgetFamily, data.settings);
-    if (!data.sample) { await maybeBrief(S, data.settings); await maybeAlerts(data, S); }
+    w = buildWidget(S, hist, config.widgetFamily, gameSettings(data));
+    if (!data.sample) { await maybeBrief(S, gameSettings(data)); await maybeAlerts(data, S); }
   } catch (e) {
     T = makeTheme("auto");
     w = new ListWidget(); w.backgroundColor = T.bg; w.setPadding(12, 12, 12, 12);
@@ -2784,7 +3042,7 @@ if (config.runsInWidget || config.runsInAccessoryWidget) {
   try { const d = await readJSON(F_DATA, {}); if (!d.settings || d.settings.autoUpdate !== false) await checkUpdate(); } catch (e) {}
   // แตะ widget → เปิดห้องแมวก่อน แล้วค่อยเข้าเมนู
   if (args.queryParameters && args.queryParameters.open === "room") {
-    try { const { data, S, hist } = await loadAll(); await WebView.loadHTML(roomHTML(S, hist, data.settings), null, null, true); } catch (e) {}
+    try { const { data, S, hist } = await loadAll(); await WebView.loadHTML(roomHTML(S, hist, gameSettings(data)), null, null, true); } catch (e) {}
   }
   await appMenu();
 }

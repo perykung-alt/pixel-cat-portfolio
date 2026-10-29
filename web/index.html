@@ -80,6 +80,40 @@ a{color:inherit}
 .catopt canvas{display:block;width:100%;height:auto;image-rendering:pixelated;margin-bottom:4px}
 .catopt[aria-checked=true]{background:var(--accent);color:#3B2418;box-shadow:3px 3px 0 var(--ink)}
 .catopt[aria-checked=true]::after{content:" ✓"}
+/* ===== v6.7 สไตล์หน้าต่างเกม ===== */
+:root{--frame:#E8B95A;--title:#6B3E22}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--frame:#6B5AA8;--title:#3A2F66}}
+:root[data-theme=dark]{--frame:#6B5AA8;--title:#3A2F66}
+.card{box-shadow:4px 4px 0 var(--ink),inset 0 0 0 2px var(--card),inset 0 0 0 4px var(--frame)}
+.card>h2:first-child{margin:-14px -14px 12px;padding:7px 14px;background:var(--title);color:#FFF4D6;border-bottom:3px solid var(--ink);font-size:15px;text-shadow:2px 2px 0 rgba(0,0,0,.35)}
+.btn,.catopt,nav.tabs button{transition:transform .14s cubic-bezier(.34,1.56,.64,1),box-shadow .14s}
+.btn:active{transform:translate(2px,2px) scale(.95)}
+.btn:hover{transform:translateY(-1px)}
+nav.tabs{background:var(--title);border-top:3px solid var(--ink);box-shadow:inset 0 3px 0 var(--frame)}
+nav.tabs button{color:#D9C7A8}
+nav.tabs button[aria-selected=true]{color:#FFF4D6;background:rgba(255,255,255,.12);box-shadow:inset 0 -4px 0 var(--accent)}
+nav.tabs button:active{transform:scale(.92)}
+.say{border-color:var(--ink);box-shadow:inset 0 0 0 2px var(--bubble),inset 0 0 0 4px var(--frame);padding:11px 14px}
+.say::after{content:"▼";position:absolute;right:10px;bottom:4px;font-size:10px;color:var(--sub);animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+.scene{will-change:transform}
+.lvbar{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12.5px}
+.lvbar .lv{font:700 13px 'Pixelify Sans',monospace;background:var(--title);color:#FFE38A;border:2px solid var(--ink);padding:1px 7px;white-space:nowrap}
+.lvbar .bar{flex:1;height:12px;border:2px solid var(--ink);background:var(--field);position:relative;overflow:hidden}
+.lvbar .bar i{position:absolute;inset:0 auto 0 0;background:repeating-linear-gradient(90deg,#5BC0F0 0 6px,#3D97D6 6px 8px);transition:width .6s cubic-bezier(.22,1,.36,1)}
+.lvbar .streak{white-space:nowrap;color:var(--sub)}
+.quest{border:2px solid var(--ink);background:var(--bg);padding:8px 10px;margin-bottom:8px}
+.quest.big{box-shadow:inset 0 0 0 2px var(--accent)}
+.quest .qt{display:flex;justify-content:space-between;gap:8px;font-weight:700}
+.quest .qd{font-size:12.5px;color:var(--sub);margin:2px 0 6px}
+.quest .qb{height:10px;border:2px solid var(--ink);background:var(--field);position:relative}
+.quest .qb i{position:absolute;inset:0 auto 0 0;background:var(--accent)}
+.quest.done{opacity:.75}.quest.done .qt span:first-child::after{content:" ✔";color:var(--up)}
+.xp{font:700 12px 'Pixelify Sans',monospace;color:var(--sub);white-space:nowrap}
+.decor{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}.decor span{font-size:12px;border:2px solid var(--ink);padding:1px 6px;background:var(--bg)}.decor span.lock{opacity:.45}
+.hold{border-left:5px solid var(--rar,transparent);padding-left:9px}
+.rar{font:700 10px 'Pixelify Sans',monospace;padding:0 4px;border:2px solid var(--ink);margin-left:6px;color:#fff;background:var(--rar);vertical-align:1px}
+body.rm *{animation:none!important;transition:none!important}
 </style>
 </head>
 <body>
@@ -91,11 +125,13 @@ a{color:inherit}
       <canvas class="scene" id="room" aria-label="ห้องแมว แตะเพื่อเล่นกับแมว"></canvas>
       <div class="say" id="say"></div>
       <div class="name" id="catname"></div>
+      <div class="lvbar" id="lvbar"></div>
       <div class="lcd" id="lcd"></div>
       <div class="mk" id="mk"></div>
       <div id="goal"></div>
       <div class="sub" id="pricenote" style="margin-top:8px"></div>
     </div>
+    <div class="card" id="questcard"><h2>■ 📜 เควส</h2><div id="quests"></div></div>
     <div class="card" id="mixcard"><h2>■ สัดส่วนพอร์ต</h2><div class="dn"><canvas id="donut" width="156" height="156"></canvas><div class="leg" id="legend"></div></div></div>
     <div class="card" id="movecard"><h2>■ วันนี้</h2><div id="moves"></div></div>
   </section>
@@ -128,6 +164,8 @@ a{color:inherit}
       <label>พันธุ์ / สีแมว <span class="sub">(แตะเพื่อเลือก เปลี่ยนทันที)</span></label><div class="catgrid" id="catPick" role="radiogroup" aria-label="เลือกแมว"></div>
       <label for="sTheme">ธีม</label><select id="sTheme"><option value="auto">อัตโนมัติ (ตามเครื่อง)</option><option value="light">กระดาษครีม (สว่าง)</option><option value="dark">ราตรีม่วง (มืด)</option></select>
       <label for="sGoal">🎯 เป้าหมายพอร์ต (บาท, 0 = ปิด)</label><input id="sGoal" inputmode="decimal">
+      <label for="sDca">💰 ยอด DCA ต่อเดือน (บาท, ใช้กับเควส · 0 = แค่มีรายการซื้อในเดือนนั้น)</label><input id="sDca" inputmode="decimal" placeholder="เช่น 5000">
+      <label class="chk" style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="sReduce" style="width:auto"> 🌙 ลดการเคลื่อนไหว (ปิดจอสั่น/เหรียญกระเด็น/ตัวอักษรวิ่ง)</label>
       <label class="chk" style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="sNotify" style="width:auto"> 🔔 แจ้งเตือนสรุปพอร์ตวันละ 2 รอบ (เย็นหลังตลาดไทยปิด · เช้าหลังตลาด US ปิด)</label>
       <div class="sub" id="notifyNote"></div>
       <pre class="brief" id="briefPrev" style="white-space:pre-wrap;font:inherit;font-size:13px;background:var(--bg);border:2px solid var(--ink);padding:8px 10px;margin:6px 0 0"></pre>
