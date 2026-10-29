@@ -11,7 +11,7 @@
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@600;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#F4E9D2;--card:#FFF8E8;--ink:#3B2418;--text:#3B2418;--sub:#8A6E57;--up:#1E8A43;--down:#C9303C;--bubble:#FFFFFF;--grid:rgba(59,36,24,.12);--field:#FFFDF6;--accent:#FFD84A}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#1D1A2F;--card:#2A2542;--ink:#0B0816;--text:#F3EAD7;--sub:#A79CC8;--up:#5BE38A;--down:#FF6B7A;--bubble:#352F55;--grid:rgba(255,255,255,.08);--field:#221E38}}
@@ -37,8 +37,8 @@ h2{font-size:16px;margin:0 0 10px}
 .say{position:relative;background:var(--bubble);border:3px solid var(--ink);padding:9px 12px;margin-top:10px;font-weight:600;min-height:24px}
 .name{font-weight:700;margin-top:10px}.sub{color:var(--sub);font-size:12.5px}
 .lcd{background:#221E38;border:3px solid #0B0816;padding:12px 14px;color:#FFE38A;margin-top:12px}
-.lcd .lab{font:700 11px 'Pixelify Sans',monospace;color:#8E84C6;display:flex;justify-content:space-between}
-.lcd .big{font:700 32px 'Pixelify Sans',monospace;text-shadow:3px 3px 0 #6B4E1A;margin:4px 0 2px;letter-spacing:1px;overflow-wrap:anywhere}
+.lcd .lab{font:600 11.5px 'IBM Plex Mono','IBM Plex Sans Thai',monospace;color:#8E84C6;display:flex;justify-content:space-between}
+.lcd .big{font:700 34px 'IBM Plex Mono','IBM Plex Sans Thai',monospace;text-shadow:2px 2px 0 #6B4E1A;margin:4px 0 2px;letter-spacing:0;overflow-wrap:anywhere}
 .lcd .pl{font-weight:600;font-size:15px}
 .lcd .u{color:#6BF08F}.lcd .d{color:#FF7A85}
 .up{color:var(--up)}.down{color:var(--down)}
@@ -98,7 +98,7 @@ nav.tabs button:active{transform:scale(.92)}
 @keyframes blink{50%{opacity:0}}
 .scene{will-change:transform}
 .lvbar{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12.5px}
-.lvbar .lv{font:700 13px 'Pixelify Sans',monospace;background:var(--title);color:#FFE38A;border:2px solid var(--ink);padding:1px 7px;white-space:nowrap}
+.lvbar .lv{font:700 13px 'IBM Plex Mono',monospace;background:var(--title);color:#FFE38A;border:2px solid var(--ink);padding:1px 7px;white-space:nowrap}
 .lvbar .bar{flex:1;height:12px;border:2px solid var(--ink);background:var(--field);position:relative;overflow:hidden}
 .lvbar .bar i{position:absolute;inset:0 auto 0 0;background:repeating-linear-gradient(90deg,#5BC0F0 0 6px,#3D97D6 6px 8px);transition:width .6s cubic-bezier(.22,1,.36,1)}
 .lvbar .streak{white-space:nowrap;color:var(--sub)}
@@ -109,7 +109,7 @@ nav.tabs button:active{transform:scale(.92)}
 .quest .qb{height:10px;border:2px solid var(--ink);background:var(--field);position:relative}
 .quest .qb i{position:absolute;inset:0 auto 0 0;background:var(--accent)}
 .quest.done{opacity:.75}.quest.done .qt span:first-child::after{content:" ✔";color:var(--up)}
-.xp{font:700 12px 'Pixelify Sans',monospace;color:var(--sub);white-space:nowrap}
+.xp{font:700 12px 'IBM Plex Mono',monospace;color:var(--sub);white-space:nowrap}
 .decor{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}.decor span{font-size:12px;border:2px solid var(--ink);padding:1px 6px;background:var(--bg)}.decor span.lock{opacity:.45}
 .hold{border-left:5px solid var(--rar,transparent);padding-left:9px}
 .rar{font:700 10px 'Pixelify Sans',monospace;padding:0 4px;border:2px solid var(--ink);margin-left:6px;color:#fff;background:var(--rar);vertical-align:1px}

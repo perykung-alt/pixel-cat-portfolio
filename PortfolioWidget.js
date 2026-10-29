@@ -78,7 +78,7 @@ function catGrid(mood, breed) {
 // @shared-end
 
 // ---------- เวอร์ชัน & อัปเดตอัตโนมัติ ----------
-const VERSION = "6.7.0";
+const VERSION = "6.7.1";
 const REPO = "perykung-alt/pixel-cat-portfolio";
 const UPDATE_BASE = `https://raw.githubusercontent.com/${REPO}/main/`;
 const REPO_URL = `https://github.com/${REPO}`;
@@ -2272,7 +2272,7 @@ function roomHTML(S, hist, settings) {
   const act = catActivity(S, settings);
   const D = { spr: SPR, name: settings.catName, anim: animPayload(S, act, settings), total: S ? S.total : 0, pl: S ? S.pl : 0, plPct: S ? S.plPct : 0, day: S ? S.dayPct : 0, theme: settings.theme };
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;600;700&family=IBM+Plex+Mono:wght@600;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#F4E9D2;--card:#FFF8E8;--ink:#3B2418;--text:#3B2418;--sub:#8A6E57}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#1D1A2F;--card:#2A2542;--ink:#0B0816;--text:#F3EAD7;--sub:#A79CC8}}
@@ -2283,7 +2283,7 @@ canvas{display:block;width:100%;image-rendering:pixelated;border:3px solid var(-
 h1{font:700 18px 'Pixelify Sans','IBM Plex Sans Thai',sans-serif;margin:0 0 10px}
 .say{background:var(--card);border:3px solid var(--ink);padding:10px 12px;margin-top:10px;font-weight:600;min-height:22px}
 .mk{display:flex;flex-direction:column;gap:6px;font-size:14px}.dot{display:inline-block;width:10px;height:10px;border:2px solid var(--ink);margin-right:6px}
-.sub{color:var(--sub);font-size:12.5px;margin-top:8px}.big{font:700 24px 'Pixelify Sans',monospace}
+.sub{color:var(--sub);font-size:12.5px;margin-top:8px}.big{font:700 24px 'IBM Plex Mono','IBM Plex Sans Thai',monospace}
 </style></head><body>
 <div class="card"><h1>■ ห้องของ <span id="nm"></span></h1><canvas id="room"></canvas><div class="say" id="say"></div><div class="sub">แตะที่ห้องเพื่อเล่นกับแมว 🐾</div></div>
 <div class="card"><div class="big" id="tot"></div><div id="pl" style="margin:4px 0 10px;font-weight:600"></div><div class="mk" id="mk"></div></div>
@@ -2327,7 +2327,7 @@ function reportHTML(S, hist, settings) {
   const ANIM_JS = animJS();
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 :root{--bg:#F4E9D2;--card:#FFF8E8;--ink:#3B2418;--text:#3B2418;--sub:#8A6E57;--up:#23994A;--down:#D93A45;--bubble:#fff;--grid:rgba(59,36,24,.12)}
@@ -2346,8 +2346,8 @@ h2{font:700 16px 'Pixelify Sans','IBM Plex Sans Thai',sans-serif;margin:0 0 12px
 .say:before{content:"";position:absolute;left:-11px;bottom:12px;border:8px solid transparent;border-right-color:var(--ink)}
 .name{font-weight:700;font-size:14px}.sub{color:var(--sub);font-size:12px}
 .lcd{background:#221E38;border:3px solid #0B0816;padding:12px;color:#FFE38A;margin-top:12px}
-.lcd .lab{font:700 11px 'Pixelify Sans',monospace;color:#8E84C6;display:flex;justify-content:space-between}
-.lcd .big{font:700 34px 'Pixelify Sans',monospace;text-shadow:3px 3px 0 #6B4E1A;margin:4px 0 2px;letter-spacing:1px}
+.lcd .lab{font:600 11.5px 'IBM Plex Mono','IBM Plex Sans Thai',monospace;color:#8E84C6;display:flex;justify-content:space-between}
+.lcd .big{font:700 34px 'IBM Plex Mono','IBM Plex Sans Thai',monospace;text-shadow:2px 2px 0 #6B4E1A;margin:4px 0 2px}
 .lcd .pl{font:600 16px 'IBM Plex Sans Thai',sans-serif;font-variant-numeric:tabular-nums}
 .up{color:var(--up)}.down{color:var(--down)}.lcd .up{color:#6BF08F}.lcd .down{color:#FF7A85}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
