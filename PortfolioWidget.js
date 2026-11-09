@@ -78,7 +78,7 @@ function catGrid(mood, breed) {
 // @shared-end
 
 // ---------- เวอร์ชัน & อัปเดตอัตโนมัติ ----------
-const VERSION = "6.7.1";
+const VERSION = "6.8.0";
 const REPO = "perykung-alt/pixel-cat-portfolio";
 const UPDATE_BASE = `https://raw.githubusercontent.com/${REPO}/main/`;
 const REPO_URL = `https://github.com/${REPO}`;
@@ -844,6 +844,45 @@ function gameTick(data, S, nowMs = Date.now(), countVisit = true) {
   if (lv1 >= 10) unlock("goldcat");
   if (lv1 > lv0) ev.push({ kind: "levelup", lv: lv1, text: `LEVEL UP! Lv.${lv1}` });
   return ev;
+}
+
+// ================= ขาย / กำไรที่รับรู้แล้ว (v6.8) =================
+// วิธีต้นทุนเฉลี่ย: ลดจำนวนทุกล็อตตามสัดส่วน (ราคาเฉลี่ยที่เหลือไม่เปลี่ยน) แล้วบันทึกกำไร/ขาดทุนลง data.realized
+// price = ราคาขายต่อหน่วยในสกุลของสินทรัพย์ (หุ้นนอก = USD), fx = USD/THB ตอนขาย (เฉพาะหุ้นนอก)
+function sellHolding(data, type, symbol, qty, price, date, fx) {
+  const lots = (data.holdings || []).filter((h) => h.type === type && h.symbol === symbol);
+  const have = lots.reduce((a, h) => a + (num(h.qty) || 0), 0);
+  if (!(qty > 0) || !(price > 0) || !(have > 0)) throw new Error("ข้อมูลขายไม่ครบ");
+  if (qty > have * (1 + 1e-9)) throw new Error(`ถืออยู่แค่ ${fmt(have, 6).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")}`);
+  const rate = type === "us" ? (num(fx) || 0) : 1;
+  if (!(rate > 0)) throw new Error("ต้องมีอัตรา USD/THB");
+  const costAll = lots.reduce((a, h) => a + (num(h.qty) || 0) * (num(h.avg) || 0) * (type === "us" ? (num(h.fx) || rate) : 1), 0);
+  const cost = (costAll / have) * qty, proceeds = qty * price * rate, k = 1 - qty / have;
+  for (const h of lots) h.qty = +(h.qty * k).toFixed(10);
+  data.holdings = data.holdings.filter((h) => !(h.type === type && h.symbol === symbol) || h.qty > 1e-9);
+  const rec = { id: uid(), date: date || ymd(), type, symbol, qty, price, fx: type === "us" ? rate : undefined, proceeds, cost, pl: proceeds - cost };
+  (data.realized ||= []).push(rec);
+  return rec;
+}
+function realizedSum(data, year) {
+  return (data.realized || []).filter((r) => !year || String(r.date).startsWith(year)).reduce((a, r) => a + (r.pl || 0), 0);
+}
+// XP เมื่อขายทำกำไร (ครั้งละ 20 · ขาดทุนได้ 5 เป็นกำลังใจ "ตัดขาดทุนก็เป็นวินัย")
+function gameSell(data, rec) {
+  if (data.sample) return [];
+  const g = gameOf(data), lv0 = lvInfo(g.xp).lv, xp = rec.pl > 0 ? 20 : 5;
+  g.xp += xp;
+  const ev = [{ kind: "quest", xp, text: rec.pl > 0 ? `ขายทำกำไร ${rec.symbol} +฿${fmt(rec.pl)}` : `ตัดขาดทุน ${rec.symbol} อย่างมีวินัย` }];
+  const lv1 = lvInfo(g.xp).lv;
+  if (lv1 > lv0) ev.push({ kind: "levelup", lv: lv1, text: `LEVEL UP! Lv.${lv1}` });
+  return ev;
+}
+// ปฏิทิน DCA 12 เดือนล่าสุด: [{ym, done, current}]
+function dcaCalendar(data, nowMs = Date.now()) {
+  const g = gameOf(data), out = [];
+  let ym = bkkParts(nowMs).ymd.slice(0, 7);
+  for (let i = 0; i < 12; i++) { out.unshift({ ym, done: !!g.dcaDone[ym], current: i === 0 }); ym = prevYm(ym); }
+  return out;
 }
 
 // ================= Utility AI: แมวเลือกกิจกรรมเองจาก "ความต้องการ" =================
@@ -2169,35 +2208,34 @@ function buildWidget(S, hist, family, settings) {
     return w;
   }
 
-  // ----- LARGE / EXTRA LARGE -----
+  // ----- LARGE / EXTRA LARGE ----- (v6.8: ห้องแมวใหญ่ทางซ้าย + ตัวเลขทางขวา ไม่มีที่ว่างเปล่า)
   w.setPadding(11, 12, 9, 12);
-  const sc = panel(w, { pad: [0, 0, 0, 0], radius: 3 });
-  const si = sc.addImage(sceneImage(S, act, settings, 334, 90)); si.imageSize = new Size(334, 90);
-  w.addSpacer(5);
-  const nm = w.addStack(); nm.layoutHorizontally(); nm.centerAlignContent();
-  txt(nm, "♥ " + settings.catName + (settings._lv ? ` · Lv.${settings._lv}` : ""), 11, { w: "heavy" });
-  nm.addSpacer(6);
-  txt(nm, line, 10, { w: "semi", color: T.sub, scale: 0.6 });
-  nm.addSpacer();
-  w.addSpacer(4);
+  const top = w.addStack(); top.layoutHorizontally();
+  const sc = panel(top, { pad: [0, 0, 0, 0], radius: 3 });
+  const si = sc.addImage(sceneImage(S, act, settings, 170, 122)); si.imageSize = new Size(170, 122);
+  top.addSpacer(9);
+  const rc = top.addStack(); rc.layoutVertically();
+  txt(rc, "♥ " + settings.catName + (settings._lv ? ` · Lv.${settings._lv}` : ""), 11, { w: "heavy", lines: 1, scale: 0.7 });
+  rc.addSpacer(1);
+  txt(rc, line, 9, { w: "semi", color: T.sub, lines: 2, scale: 0.6 });
+  rc.addSpacer(4);
+  lcd(rc, S, 150, 2.2);
+  rc.addSpacer(4);
+  marketRow(rc, act, 8.5, true);
+  w.addSpacer(7);
   const mid = w.addStack(); mid.layoutHorizontally(); mid.centerAlignContent();
-  const leftCol = mid.addStack(); leftCol.layoutVertically();
-  lcd(leftCol, S, 200, 2.8);
-  leftCol.addSpacer(5);
-  marketRow(leftCol, act, 9);
-  mid.addSpacer();
-  const dn = mid.addImage(pixelDonut(S)); dn.imageSize = new Size(104, 104);
-  w.addSpacer(6);
+  const dn = mid.addImage(pixelDonut(S)); dn.imageSize = new Size(62, 62);
+  mid.addSpacer(8);
 
-  const tb = panel(w, { pad: [4, 8, 4, 8] });
+  const tb = panel(mid, { pad: [4, 8, 4, 8] });
   const shownL = CAT_ORDER.filter((c) => S.cats[c].value > 0);
   for (let i = 0; i < shownL.length; i += 2) {
     const r = tb.addStack(); r.layoutHorizontally(); r.centerAlignContent();
     shownL.slice(i, i + 2).forEach((c, j) => {
       const x = S.cats[c];
-      const cell = r.addStack(); cell.layoutHorizontally(); cell.centerAlignContent(); cell.size = new Size(150, 14);
+      const cell = r.addStack(); cell.layoutHorizontally(); cell.centerAlignContent(); cell.size = new Size(120, 14);
       pixDot(cell, CATS[c].color, 7); cell.addSpacer(4);
-      txt(cell, `${CATS[c].name} ${x.share.toFixed(0)}%`, 10, { w: "bold" });
+      txt(cell, `${CATS[c].short} ${x.share.toFixed(0)}%`, 10, { w: "bold" });
       cell.addSpacer();
       txt(cell, pctStr(x.plPct), 10, { color: plColor(x.pl), w: "heavy" });
       if (j === 0) r.addSpacer(8);
@@ -2699,7 +2737,9 @@ async function editFlow(data) {
   const h = list[i];
   const acts = ["แก้ไข", "ลบรายการนี้", "ย้ายหมวด (เปลี่ยนประเภทสินทรัพย์)"];
   if (h.type === "fund") acts.push("ตั้งป้ายเขตการลงทุน");
+  acts.push("💸 ขาย (บันทึกกำไรที่รับรู้แล้ว)");
   const j = await ask(h.symbol, `หมวดปัจจุบัน: ${CATS[TYPES[h.type].cat].name}`, acts);
+  if (j === acts.length - 1) return sellFlow(data, h);
   if (j === 2) {
     const k = await ask("ย้ายไปหมวดไหน", "ทุกล็อตของ " + h.symbol + " จะย้ายไปด้วย", TYPE_ORDER.map((t) => (t === h.type ? "✓ " : "") + TYPES[t].label));
     if (k < 0 || TYPE_ORDER[k] === h.type) return;
@@ -2723,6 +2763,28 @@ async function editFlow(data) {
     a.addDestructiveAction("ลบ"); a.addCancelAction("ยกเลิก");
     if ((await a.presentAlert()) === 0) { data.holdings = data.holdings.filter((x) => x.id !== h.id); writeJSON(F_DATA, data); }
   }
+}
+
+async function sellFlow(data, h) {
+  const lots = data.holdings.filter((x) => x.type === h.type && x.symbol === h.symbol);
+  const have = lots.reduce((a, x) => a + x.qty, 0);
+  let cur = NaN, fx = NaN;
+  try { const P = await fetchPrices({ holdings: lots, navs: data.navs, settings: data.settings }); const S1 = compute({ holdings: lots, navs: data.navs }, P); const r = S1.rows[0]; cur = r ? (h.type === "us" ? r.native : r.price) : NaN; fx = S1.usdthb; } catch (e) {}
+  const unit = h.type === "us" ? "USD" : "บาท";
+  const a = new Alert(); a.title = `💸 ขาย ${h.type === "gold" ? "ทอง" : h.symbol}`;
+  a.message = `ถืออยู่ ${fmt(have, 6).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")} ${TYPES[h.type].unit} (ทุกล็อตรวมกัน คิดต้นทุนเฉลี่ย)`;
+  const q = a.addTextField("จำนวนที่ขาย", String(have)); q.setDecimalPadKeyboard();
+  const p = a.addTextField(`ราคาขายต่อหน่วย (${unit})`, isFinite(cur) ? String(+cur.toFixed(cur >= 1 ? 2 : 6)) : ""); p.setDecimalPadKeyboard();
+  const d = a.addTextField("วันที่ (YYYY-MM-DD)", ymd());
+  if (h.type === "us") { const f = a.addTextField("USD/THB ตอนขาย", isFinite(fx) ? fx.toFixed(2) : ""); f.setDecimalPadKeyboard(); }
+  a.addAction("ขาย"); a.addCancelAction("ยกเลิก");
+  if ((await a.presentAlert()) !== 0) return;
+  try {
+    const rec = sellHolding(data, h.type, h.symbol, num(a.textFieldValue(0)), num(a.textFieldValue(1)), a.textFieldValue(2) || ymd(), h.type === "us" ? num(a.textFieldValue(3)) : 1);
+    const ev = gameSell(data, rec);
+    writeJSON(F_DATA, data);
+    await info(rec.pl >= 0 ? "💰 ขายแล้ว กำไร!" : "ขายแล้ว", `${rec.pl >= 0 ? "กำไร" : "ขาดทุน"} ฿${fmt(Math.abs(rec.pl))}\nได้เงิน ฿${fmt(rec.proceeds)} · ต้นทุน ฿${fmt(rec.cost)}\n${ev.map((e) => e.kind === "levelup" ? "✨ " + e.text : `+${e.xp} EXP`).join(" · ")}\nกำไรที่ขายแล้วปีนี้ ฿${fmt(realizedSum(data, String(new Date().getFullYear())))}`);
+  } catch (e) { await info("ขายไม่ได้", String(e.message || e)); }
 }
 
 async function navFlow(data, only) {
@@ -2836,6 +2898,8 @@ async function questFlow(data, S) {
     const bar = "▰".repeat(Math.round(L.pct * 10)) + "▱".repeat(10 - Math.round(L.pct * 10));
     const msg = `Lv.${L.lv}  ${bar}  ${L.into}/${L.need} EXP\n🔥 เช็กพอร์ตติดกัน ${g.streak} วัน · DCA ติดกัน ${g.dcaStreak} เดือน\n\n` +
       q.map((x) => `${x.done ? "✅" : x.icon} ${x.title} (+${x.xp})\n   ${x.desc}`).join("\n") +
+      `\n\nปฏิทิน DCA: ${dcaCalendar(data).map((m) => (m.done ? "🟩" : m.current ? "🟨" : "⬜")).join("")}` +
+      ((data.realized || []).length ? `\nกำไรที่ขายแล้วปีนี้: ${signed(realizedSum(data, String(new Date().getFullYear())))} ฿` : "") +
       `\n\nของแต่งห้อง: ${Object.entries(DECOR).map(([k, d]) => (g.decor.includes(k) ? "✨" : "🔒") + d.name).join(" · ")}`;
     const i = await ask("📜 เลเวล & เควส", msg, [`💰 ตั้งยอด DCA ต่อเดือน (${num(data.settings.dcaAmount) > 0 ? "฿" + fmt(data.settings.dcaAmount) : "ยังไม่ตั้ง"})`], "ปิด");
     if (i < 0) return;

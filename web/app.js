@@ -409,6 +409,7 @@ function renderGame() {
   $("quests").innerHTML = q.map((x) => `<div class="quest${x.done ? " done" : ""}${x.big ? " big" : ""}">
       <div class="qt"><span>${x.icon} ${esc(x.title)}</span><span class="xp">+${x.xp} EXP</span></div>
       <div class="qd">${esc(x.desc)}</div><div class="qb"><i style="width:${(x.pct * 100).toFixed(0)}%"></i></div></div>`).join("")
+    + `<div class="sub">ปฏิทิน DCA 12 เดือน</div><div class="dcacal">${dcaCalendar(data).map((m) => `<i class="${m.done ? "on" : ""}${m.current ? " cur" : ""}" title="${m.ym}">${TH_MONTH[+m.ym.slice(5) - 1].replace(/\./g, "")}</i>`).join("")}</div>`
     + `<div class="sub" style="margin-top:4px">EXP ${fmt(g.xp)} · อีก ${fmt(L.need - L.into)} ถึง Lv.${L.lv + 1} · ของแต่งห้อง:</div>
       <div class="decor">${Object.entries(DECOR).map(([k, d]) => `<span class="${g.decor.includes(k) ? "" : "lock"}" title="${esc(d.how)}">${g.decor.includes(k) ? "✨" : "🔒"} ${esc(d.name)}</span>`).join("")}</div>
       ${num(data.settings.dcaAmount) > 0 ? "" : `<div class="row" style="margin-top:8px"><button class="btn sm" id="setDca">💰 ตั้งยอด DCA ต่อเดือน</button></div>`}`;
@@ -424,6 +425,7 @@ function renderGame() {
 function renderPort() {
   if (!S || !S.rows.length) {
     $("holds").innerHTML = `<div class="empty">ยังไม่มีรายการ<br>กด ➕ เพิ่ม หรือนำเข้าจากรูปด้วย AI ที่แท็บ ⚙️</div>`;
+    renderRealized();
     return;
   }
   const fi = data.settings.fundInfo || {};
@@ -439,6 +441,7 @@ function renderPort() {
     </div>`;
   }).join("");
   $("holds").querySelectorAll(".hold").forEach((el) => el.addEventListener("click", () => assetSheet(S.rows[+el.dataset.i])));
+  renderRealized();
 }
 
 // ---------- กล่องโต้ตอบ ----------
@@ -536,7 +539,7 @@ function assetSheet(r) {
   const extra = [];
   if (r.type === "fund") extra.push(`<button class="btn sm" value="nav">📝 อัปเดต NAV / ป้าย</button>`);
   if (["thai", "us", "crypto"].includes(r.type)) extra.push(`<button class="btn sm" value="manual">✍️ กรอกราคาเอง</button>`);
-  extra.push(`<button class="btn sm" value="add">➕ ซื้อเพิ่ม</button>`, `<button class="btn sm" value="move">🔀 ย้ายหมวด</button>`);
+  extra.push(`<button class="btn sm" value="add">➕ ซื้อเพิ่ม</button>`, `<button class="btn sm" value="sell">💸 ขาย</button>`, `<button class="btn sm" value="move">🔀 ย้ายหมวด</button>`);
   openDialog(`<h2>${esc(r.type === "gold" ? "ทองคำแท่ง 96.5%" : r.symbol)}</h2><div class="sub">${CATS[r.cat].name} · ${lots.length} ล็อต · แตะล็อตเพื่อแก้ไข</div>
     <div style="margin-top:8px">${lots.map((h) => `<button class="btn sm" style="width:100%;text-align:left;margin-top:6px" value="lot:${h.id}">${esc(h.date)} · ${qtyStr(h.qty, h.type)} ${TYPES[h.type].unit} @ ${fmtPrice(h.avg)}${h.type === "us" ? " USD" : ""}</button>`).join("") || `<div class="sub">มาจากบัญชีอื่น</div>`}</div>
     <div class="row" style="margin-top:12px">${extra.join("")}</div>
@@ -546,11 +549,46 @@ function assetSheet(r) {
       if (v === "nav") navForm(r.symbol);
       else if (v === "manual") manualForm(r);
       else if (v === "add") holdingForm({ type: r.type, symbol: r.symbol, date: ymd() }, "ซื้อเพิ่ม");
+      else if (v === "sell") sellForm(r);
       else if (v.startsWith("lot:")) lotSheet(data.holdings.find((h) => h.id === v.slice(4)));
       else if (v === "move") moveForm(r);
       else if (v === "delall" && confirm(`ลบ ${r.symbol} ทุกล็อต?`)) { data.holdings = data.holdings.filter((h) => !(h.type === r.type && h.symbol === r.symbol)); save(); refresh(); }
     }, 50);
   });
+}
+// ขาย (ต้นทุนเฉลี่ย) → บันทึกกำไรที่รับรู้แล้ว + EXP
+function sellForm(r) {
+  const unit = r.type === "us" ? "USD" : "บาท", cur = r.type === "us" ? r.native : r.price;
+  openDialog(`<h2>💸 ขาย ${esc(r.type === "gold" ? "ทองคำแท่ง" : r.symbol)}</h2><div class="sub">ถืออยู่ ${qtyStr(r.qty, r.type)} ${TYPES[r.type].unit} · ต้นทุนเฉลี่ย ฿${fmtPrice(r.avg)}/หน่วย</div>
+    <label>จำนวนที่ขาย</label><div class="row"><input name="q" inputmode="decimal" required style="flex:1"><button class="btn sm" type="button" id="sellAll">ทั้งหมด</button></div>
+    <label>ราคาขายต่อหน่วย (${unit})</label><input name="p" inputmode="decimal" required value="${isFinite(cur) ? +cur.toFixed(cur >= 1 ? 2 : 6) : ""}">
+    <label>วันที่ขาย</label><input name="d" type="date" value="${ymd()}">
+    <div class="hint" id="sellPrev"></div>
+    <div class="acts"><button class="btn" value="cancel" formnovalidate>ยกเลิก</button><button class="btn pri" value="ok">ขาย</button></div>`,
+  (v, fd) => {
+    try {
+      const rec = sellHolding(data, r.type, r.symbol, num(fd.get("q")), num(fd.get("p")), fd.get("d") || ymd(), S && S.usdthb);
+      const ev = gameSell(data, rec);
+      save(); refresh(); juice(ev);
+      toast(`ขายแล้ว ${rec.pl >= 0 ? "กำไร" : "ขาดทุน"} ฿${fmt(Math.abs(rec.pl))}`, 4000);
+    } catch (e) { toast("ขายไม่ได้: " + e.message, 4000); }
+  });
+  const f = $("dlgForm"), prev = () => {
+    const q = num(f.q.value), p = num(f.p.value), rate = r.type === "us" ? (S && S.usdthb) || 0 : 1;
+    const off = isFinite(cur) && cur > 0 && p > 0 && Math.abs(p - cur) / cur > 0.3;
+    $("sellPrev").textContent = q > 0 && p > 0 ? `ได้เงิน ≈ ฿${fmt(q * p * rate)} · ${(q * p * rate - q * r.avg) >= 0 ? "กำไร" : "ขาดทุน"} ≈ ฿${fmt(Math.abs(q * p * rate - q * r.avg))}${off ? ` · ⚠️ ราคาต่างจากตอนนี้ (${unit === "USD" ? "$" : "฿"}${fmtPrice(cur)}) มาก ตรวจหน่วยอีกที` : ""}` : "";
+  };
+  f.q.oninput = f.p.oninput = prev;
+  $("sellAll").onclick = () => { f.q.value = r.qty; prev(); };
+}
+function renderRealized() {
+  const L = (data.realized || []).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
+  $("realcard").hidden = !L.length;
+  if (!L.length) return;
+  const y = String(new Date().getFullYear());
+  $("realized").innerHTML = `<div class="li"><span>ปีนี้</span><b class="${cl(realizedSum(data, y))}">${signed(realizedSum(data, y))} ฿</b></div><div class="li"><span>ทั้งหมด</span><b class="${cl(realizedSum(data))}">${signed(realizedSum(data))} ฿</b></div>`
+    + L.slice(0, 20).map((x, i) => `<div class="li"><span>${esc(x.date)} · ${esc(x.type === "gold" ? "ทอง" : x.symbol)} ${qtyStr(x.qty, x.type)} @ ${x.type === "us" ? "$" : "฿"}${fmtPrice(x.price)}</span><span><b class="${cl(x.pl)}">${signed(x.pl)}</b> <button class="btn sm" data-undo="${esc(x.id)}" title="ลบประวัตินี้ (ไม่คืนจำนวนหุ้น)">✕</button></span></div>`).join("");
+  $("realized").querySelectorAll("[data-undo]").forEach((b) => (b.onclick = () => { if (!confirm("ลบประวัติการขายนี้? (จำนวนที่ขายไปจะไม่กลับมา)")) return; data.realized = data.realized.filter((x) => x.id !== b.dataset.undo); save(); renderRealized(); }));
 }
 function lotSheet(h) {
   if (!h) return;
